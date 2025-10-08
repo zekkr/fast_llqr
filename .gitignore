@@ -1,0 +1,111 @@
+# =================================
+# R Language Specific
+# =================================
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# =================================
+# Data and Results Directories
+# =================================
+# Ignore contents but keep directory structure
+/data/
+!/data/error_cases/
+!/data/llqr_simu_results/
+!/data/tvcqr_simu_results/
+
+# Results directory (comment out if you want to track results)
+/results/
+
+# Old code directory (comment out if you want to track old code)
+/old_code/
+
+# =================================
+# Compiled Code and Build Artifacts
+# =================================
+# C/C++ compiled files
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+
+# Fortran compiled files
+*.mod
+*.MOD
+
+# MATLAB temporary files
+*.m~
+*.asv
+*.mat
+
+# =================================
+# Python (if used)
+# =================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# =================================
+# Documentation Build Files
+# =================================
+/docs/_build/
+/docs/build/
+
+# =================================
+# System and IDE Files
+# =================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*~
+*.tmp
+*.temp
+*.log
+*.out
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =================================
+# Environment and Configuration
+# =================================
+# Environment variables (never commit!)
+.env
+.env.local
+.env.production
+
+# Configuration secrets
+config.yml
+secrets.yml
+credentials.json
+
+# =================================
+# Package Management
+# =================================
+# R package management
+packrat/
+renv/
+
+# Python package management
+pip-log.txt
+pip-delete-this-directory.txt
