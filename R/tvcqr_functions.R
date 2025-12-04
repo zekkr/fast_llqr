@@ -1,4 +1,6 @@
+# ============================================================================ #
 # Generates simulation data for time-varying coefficient quantile regression
+# ============================================================================ #
 generate_ts <- function(n, case = 1, seed = NULL) {
   if (!is.null(seed)) {
     set.seed(seed)
@@ -42,7 +44,9 @@ generate_ts <- function(n, case = 1, seed = NULL) {
   ))
 }
 
+# ============================================================================ #
 # Time-varying coefficient quantile regression by Local linear estimator (Using 'Quantreg')
+# ============================================================================ #
 tvc_rq <- function (x, y, tau = 0.5, h = NULL) {
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -67,7 +71,9 @@ tvc_rq <- function (x, y, tau = 0.5, h = NULL) {
   return(list(theta_ll_est = theta_ll_est, h = h))
 }
 
+# ============================================================================ #
 # Sequential algorithm for TVCQR 
+# ============================================================================ #
 tvcqr_seq <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14, maxit = 1e6, bland = F){
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -277,7 +283,129 @@ tvcqr_seq <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14, maxi
   return(list(theta_ll_est = theta_ll_est, it_num = it_num, pivot_id_list = pivot_id_list, residual_est = residual_est, H_seq = H_seq))
 }
 
+# ============================================================================ #
+# Proprecessing algorithm for TVCQR 
+# ============================================================================ #
+tvc_rq_ppro <- function (x, y, tau = 0.5, h = NULL, Mm.factor = 1e-4, pmethod = NULL) {
+  n <- length(y)
+  if (tau < 0 | tau > 1) 
+    stop("tau outside (0,1)")
+  
+  if (nrow(x) != n) 
+    stop("x and y don't match n")
+  p <- ncol(x)
+  
+  if (is.null(h)) {
+    h <- n^{-0.2}
+  }
+  x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
+  m <- log(n)^{4} * h^2 * max(x.norms)  # if assuming x sub-gaussian, directly use h^2 * log(m)^{9/2} rate
+  
+  theta_ll_est <- matrix(NA, nrow = n, ncol = p+1)
+  d_theta_ll_est <- matrix(NA, nrow = n, ncol = p+1)
+  residual_est <- matrix(NA, nrow = n, ncol = n)
+  
+  # Estimate the residuals at time 1
+  xx <- cbind(matrix(1, nrow = n, ncol = 1), x)
+  xx <- cbind(xx, apply(xx, 2, function(x) x * (1:n-1) / n)) # n*2(p+1)
+  w <- 0.75 * (1 - ((1:n-1)/ (n*h))^2) * ((abs(1:n-1) / n) <= h) 
+  wxx <- apply(xx, 2, function(x) x * w)
+  wy <- y * w
+  row_all_zero_x <- apply(wxx, 1, function(z) all(z == 0))
+  zero_rows <- row_all_zero_x & (wy == 0)
+  wxx <- wxx[!zero_rows, , drop = FALSE] # remove zero rows
+  wy <- wy[!zero_rows]
+  if (!is.null(pmethod)) {
+    z <- quantreg::rq.fit(x = wxx, y = wy, tau = tau, method = pmethod) # rq.fit is faster than rq
+  } else {
+    z <- quantreg::rq.fit(x = wxx, y = wy, tau = tau)
+  }
+  b <- z$coef
+  # r <- z$resid
+  r <- y - xx %*% b
+  
+  theta_ll_est[1,] <- b[1:(p+1)]
+  d_theta_ll_est[1,] <- b[(p+2):(2*(p+1))]
+  residual_est[1,] <- r
+  
+  
+  for (t in 2:n) {
+    not_optimal <- TRUE
+    not_new_sl_sh <- TRUE
+    mm <- m
+    xx <- cbind(matrix(1, nrow = n, ncol = 1), x)
+    xx <- cbind(xx, apply(xx, 2, function(x) x * (1:n-t) / n)) # n*2(p+1)
+    w <- 0.75 * (1 - ((1:n-t)/ (n*h))^2) * ((abs(1:n-t) / n) <= h) 
+    wxx <- apply(xx, 2, function(x) x * w)
+    wy <- y * w
+    while (not_optimal) {
+      r <- residual_est[t-1,]
+      if (not_new_sl_sh) {
+        M <- Mm.factor * mm * log(log(n))
+        sl <- r < - M
+        sh <- r > M
+      }
+      
+      wxxs <- wxx[!sh & !sl, ]
+      wys <- wy[!sh & !sl]
+      if (any(sl)) {
+        glob.wx <- colSums(wxx[sl, , drop = FALSE])
+        glob.wy <- sum(wy[sl])
+        wxxs <- rbind(wxxs, glob.wx)
+        wys <- c(wys, glob.wy)
+      }
+      if (any(sh)) {
+        ghib.wx <- colSums(wxx[sh, , drop = FALSE])
+        ghib.wy <- sum(wy[sh])
+        wxxs <- rbind(wxxs, ghib.wx)
+        wys <- c(wys, ghib.wy)  
+      }
+      rows_all_zero_x <- apply(wxxs, 1, function(z) all(z == 0))
+      zero_rows <- rows_all_zero_x & (wys == 0)
+      wxxs <- wxxs[!zero_rows, , drop = FALSE] # remove zero rows
+      wys <- wys[!zero_rows]
+      ns <- nrow(wxxs) # subsample size
+      # print(ns)
+      if (!is.null(pmethod)) {
+        z <- quantreg::rq.fit(x = wxxs, y = wys, tau = tau, method = pmethod) # rq.fit is faster than rq
+      } else {
+        z <- quantreg::rq.fit(x = wxxs, y = wys, tau = tau)
+      }
+      # z <- quantreg::rq.fit(x = wxxs, y = wys, tau = tau, method = method)  
+      # z <- quantreg::rq.fit(x = xxs, y = ys, tau = tau, weights = ws, method = method)
+      b <- z$coef
+      # r <- y - crossprod(t(xx), b)
+      r <- y - xx %*% b
+      sh.bad <- (r < 0) & sh
+      sl.bad <- (r > 0) & sl
+      bad.signs <- sum(sh.bad | sl.bad)
+      if (bad.signs > 0) {
+        if (bad.signs > 0.1 * ns) {
+          mm <- 2 * mm
+          not_new_sl_sh <- TRUE
+          cat("Too many fixups:  doubling m at time ", t, "\n")
+        } else {
+          sh <- sh & !sh.bad
+          sl <- sl & !sl.bad
+          not_new_sl_sh <- FALSE
+          cat("Fixed some signs at time ", t, "\n")
+        }
+      }
+      else not_optimal <- FALSE
+    }
+    theta_ll_est[t,] <- b[1:(p+1)]
+    d_theta_ll_est[t,] <- b[(p+2):(2*(p+1))]
+    # residual_est[t, ] <- y - crossprod(t(xx), b)
+    # residual_est[t, ] <- y - xx %*% b
+    residual_est[t, ] <- r
+  }
+  
+  list(theta_ll_est = theta_ll_est, residual_est = residual_est, h = h)
+}
+
+# ============================================================================ #
 # Sequential plus preprocessing algorithm for TVCQR # eps seems not used
+# ============================================================================ #
 tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14, maxit = 1e6,
                            bland = FALSE, Mm.factor = 1e-4, eps = 1e-06, cpp_helper = FALSE) {
   x <- as.matrix(x)
@@ -504,7 +632,7 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
         M <- max(Mm.factor * mmm * log(log(m)), 0.1 * residual_scale) #Mm.factor * mmm * log(log(m))
         
         # NEW: Ensure minimum subsample size
-        min_subsample_size <- max(3 * 2*(nvar+1), 20)  # At least 3x the number of free variables
+        min_subsample_size <- max(3 * 2*(nvar+1), 100)  # At least 3x the number of free variables
         
         # If too few observations would remain, increase M
         n_potential_S <- sum(abs(r) <= M)
@@ -886,7 +1014,9 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   return(list(theta_ll_est = theta_ll_est, it_num = it_num, residual_est = residual_est, M = M, n_sub = n_sub, H_seq = H_seq))
 }
 
+# ============================================================================ #
 # Sequential algorithm for TVCQR (Based on Fortran)
+# ============================================================================ #
 tvcqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, tol = 1e-14, 
                                       maxit = 1e6, bland = FALSE) {
   
@@ -941,11 +1071,13 @@ tvcqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, tol = 1e-14,
     theta_ll_est = theta_ll_est,
     it_num = result$it_num,
     residual_est = residual_est,
-    H = H_mat
+    H_seq = H_mat
   ))
 }
 
+# ============================================================================ #
 # Sequential plus preprocessing algorithm for TVCQR (Based on Fortran)
+# ============================================================================ #
 tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, 
                                            tol = 1e-14, maxit = 1e6, bland = FALSE, 
                                            Mm.factor = 1e-4, eps = 1e-06) {

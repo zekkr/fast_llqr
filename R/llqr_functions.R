@@ -1,4 +1,6 @@
+# ============================================================================ #
 # Generates simulation data for one-dim Local linear quantile regression
+# ============================================================================ #
 generate_data <- function(n, case = 1, seed = NULL){
   if (!is.null(seed)) {
     set.seed(seed)
@@ -17,7 +19,9 @@ generate_data <- function(n, case = 1, seed = NULL){
   return(list(x = x,y = y))
 }
 
+# ============================================================================ #
 # 2x2 Matrix Inverse Solver
+# ============================================================================ #
 inv22 <- function(mat) {
   # Check if input is a 2x2 matrix
   if (!all(dim(mat) == c(2, 2))) {
@@ -40,8 +44,11 @@ inv22 <- function(mat) {
   return(inv_mat)
 }
 
+# ============================================================================ #
 # Sequential algorithm for one-dim Local linear quantile regression
-llqr_tau_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, bland = F, track_order = F){
+# ============================================================================ #
+llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
+                         bland = F, track_order = F){
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -266,12 +273,14 @@ llqr_tau_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit
     # it_num <- it_num[order(original_order)]
   }
   
-  return(list(ll_est = ll_est, d_ll_est = d_ll_est, it_num = it_num, h = h, H = H))
+  return(list(ll_est = ll_est, d_ll_est = d_ll_est, it_num = it_num, h = h, H_seq = H))
 }
 
-# Sequential plus preprocessing algorithm for one-dim LLQR
-llqr_tau_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
-                              Mm.factor = 1, bland = F, track_order = F){
+# ============================================================================ #
+# Preprocessing algorithm for one-dim LLQR
+# ============================================================================ #
+#Local linear quantile regression for one-dim predictors 
+llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, track_order = F, pmethod = NULL){
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -303,8 +312,163 @@ llqr_tau_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, 
   }
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
+  mm <- max(x.norms) # * log(m)^{1/2} * m^{-0.4}
+  
+  # initialize the output
+  ll_est <- rep(0,rounds)
+  d_ll_est <- rep(0,rounds)
+  residual_est <- matrix(0, nrow = m, ncol = m)
+  
+  # Initial estimation at the first evaluation point
+  eva_z <- z[1] - x
+  xx <- cbind(matrix(1, nrow = m, ncol = 1), eva_z) # n*(p+1)
+  w <- dnorm(eva_z/h)
+  wxx <- apply(xx, 2, function(x) x * w)
+  wy <- y * w
+  row_all_zero_x <- apply(wxx, 1, function(z) all(z == 0))
+  zero_rows <- row_all_zero_x & (wy == 0)
+  wxx <- wxx[!zero_rows, , drop = FALSE] # remove zero rows
+  wy <- wy[!zero_rows]
+  if (!is.null(pmethod)) {
+    fit <- quantreg::rq.fit(x = wxx, y = wy, tau = tau, method = pmethod) # rq.fit is faster than rq
+  } else {
+    fit <- quantreg::rq.fit(x = wxx, y = wy, tau = tau)
+  }
+  b <- fit$coef
+  # r <- z$resid
+  r <- y - xx %*% b
+  
+  ll_est[1] <- b[1]
+  d_ll_est[1] <- b[2]
+  residual_est[1, ] <- r
+  
+  
+  for (rd in 2:rounds){
+    # print(rd)
+    not_optimal <- TRUE
+    not_new_sl_sh <- TRUE
+    mmm <- mm
+    eva_z <- z[rd] - x
+    w <- dnorm(eva_z/h)
+    xx <- cbind(matrix(1, nrow = m, ncol = 1), eva_z) # n*(p+1)
+    wxx <- apply(xx, 2, function(x) x * w)
+    wy <- y * w
+    
+    while (not_optimal) {
+      r <- residual_est[rd-1,]
+      if (not_new_sl_sh) {
+        M <- Mm.factor * mmm * log(log(m))
+        sl <- r < - M
+        sh <- r > M
+      }
+      
+      wxxs <- wxx[!sh & !sl, ]
+      wys <- wy[!sh & !sl]
+      if (any(sl)) {
+        glob.wx <- colSums(wxx[sl, , drop = FALSE])
+        glob.wy <- sum(wy[sl])
+        wxxs <- rbind(wxxs, glob.wx)
+        wys <- c(wys, glob.wy)
+      }
+      if (any(sh)) {
+        ghib.wx <- colSums(wxx[sh, , drop = FALSE])
+        ghib.wy <- sum(wy[sh])
+        wxxs <- rbind(wxxs, ghib.wx)
+        wys <- c(wys, ghib.wy)  
+      }
+      rows_all_zero_x <- apply(wxxs, 1, function(z) all(z == 0))
+      zero_rows <- rows_all_zero_x & (wys == 0)
+      wxxs <- wxxs[!zero_rows, , drop = FALSE] # remove zero rows
+      wys <- wys[!zero_rows]
+      ms <- nrow(wxxs) # subsample size
+      # print(ns)
+      if (!is.null(pmethod)) {
+        fit <- quantreg::rq.fit(x = wxxs, y = wys, tau = tau, method = pmethod) # rq.fit is faster than rq
+      } else {
+        fit <- quantreg::rq.fit(x = wxxs, y = wys, tau = tau)
+      }  
+      # z <- quantreg::rq.fit(x = xxs, y = ys, tau = tau, weights = ws, method = method)
+      b <- fit$coef
+      # r <- y - crossprod(t(xx), b)
+      r <- y - xx %*% b
+      sh.bad <- (r < 0) & sh
+      sl.bad <- (r > 0) & sl
+      bad.signs <- sum(sh.bad | sl.bad)
+      if (bad.signs > 0) {
+        if (bad.signs > 0.1 * ms) {
+          mmm <- 2 * mmm
+          not_new_sl_sh <- TRUE
+          cat("Too many fixups:  doubling m at evaluation point ", rd, "\n")
+        } else {
+          sh <- sh & !sh.bad
+          sl <- sl & !sl.bad
+          not_new_sl_sh <- FALSE
+          cat("Fixed some signs at evaluation point ", rd, "\n")
+        }
+      }
+      else not_optimal <- FALSE
+    }
+    
+    ll_est[rd] <- b[1]
+    d_ll_est[rd] <- b[2]
+    residual_est[rd, ] <- r
+  }
+  
+  # Reorder results back to the original order if track_order is TRUE
+  if (track_order) {
+    ll_est <- ll_est[order(original_order)]
+    d_ll_est <- d_ll_est[order(original_order)]
+    # it_num <- it_num[order(original_order)]
+  }
+  
+  return(list(ll_est = ll_est, d_ll_est = d_ll_est, residual_est = residual_est, h = h))
+}
+
+
+
+# ============================================================================ #
+# Sequential plus preprocessing algorithm for one-dim LLQR
+# ============================================================================ #
+llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
+                              Mm.factor = 1, bland = F, track_order = F, min_subsample_size = NULL){
+  # x must be one-dimensional
+  x <- as.matrix(x)
+  y <- as.matrix(y)
+  
+  # If z is not provided, use x; otherwise, convert z to a matrix
+  if (is.null(z)) {
+    z <- as.matrix(x)
+  } else {
+    z <- as.matrix(z)
+  }
+  
+  # Always sort z and store the original order if track_order is TRUE
+  original_order <- order(z)
+  z <- z[original_order, , drop = FALSE]
+  
+  m <- nrow(x) # subject number
+  nvar <- ncol(x) # number of var
+  rounds <- nrow(z) # number of evaluation points
+  
+  if (is.null(h)) {
+    # choosing bandwidth using rule of thumb in Yu and Jones 1998.
+    red_dim <- floor(0.2 * m) # Rounding of Numbers
+    index_y <- order(y)[red_dim:(m - red_dim)] # increasing = TRUE
+    h <- KernSmooth::dpill(x[index_y, ], y[index_y]) 
+    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
+    if (h == "NaN") {
+      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
+    }
+  }
+  
+  if (is.null(min_subsample_size)){
+    # NEW: Ensure minimum subsample size
+    min_subsample_size <- max(20, ceiling(0.2 * m))
+  }
+  
+  x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
   #mm <- sqrt(log(m)) * (1 / sqrt(m * h) + h^2) * max(x.norms)
-  mm <- max(x.norms)
+  mm <- max(x.norms) # * log(m)^(1/2) * m^{-2/5}
   
   eva_z <- z[1] - x
   w <- dnorm(eva_z/h)
@@ -516,9 +680,6 @@ llqr_tau_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, 
         # Fix 4: Scale threshold to residual magnitude
         residual_scale <- median(abs(r))
         M <- max(Mm.factor * mmm * log(log(m)), 0.1 * residual_scale) #Mm.factor * mmm * log(log(m))
-        
-        # NEW: Ensure minimum subsample size
-        min_subsample_size <- 20
         
         # If too few observations would remain, increase M
         n_potential_S <- sum(abs(r) <= M)
@@ -887,3 +1048,136 @@ llqr_tau_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, 
   
   return(list(ll_est = ll_est, d_ll_est = d_ll_est, it_num = it_num, residual_est = residual_est, h = h, M = M, n_sub = n_sub, H_seq = H_seq))
 }
+
+# ============================================================================ #
+# Sequential algorithm for one-dim LLQR (Fortran version)
+# ============================================================================ #
+llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14,
+                                     maxit = 1e6, bland = FALSE) {
+  
+  # Convert to vectors
+  x <- as.vector(x)
+  y <- as.vector(y)
+  if (is.null(z)) {
+    z <- x
+  }
+  
+  # Get dimensions
+  m <- length(x)
+  nvar <- 1  # Always 1 for univariate LLQR
+  rounds <- length(z)
+  
+  # Handle bandwidth - calculate same way as R function
+  if (is.null(h)) {
+    # Using rule of thumb from Yu and Jones 1998 (same as llqr_tau_seq)
+    red_dim <- floor(0.2 * m)
+    index_y <- order(y)[red_dim:(m - red_dim)]
+    h <- KernSmooth::dpill(x[index_y], y[index_y])
+    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
+    if (is.nan(h)) {
+      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
+    }
+  }
+  
+  # Prepare output arrays
+  ll_est <- numeric(rounds)
+  d_ll_est <- numeric(rounds)
+  it_num <- integer(rounds)
+  residual_est <- matrix(0.0, nrow = rounds, ncol = m)
+  H_mat <- matrix(0L, nrow = rounds, ncol = nvar + 1)
+  
+  # Call Fortran subroutine
+  result <- .Fortran("llqr_seq_fortran",
+                     x = as.double(x),
+                     y = as.double(y),
+                     z = as.double(z),
+                     m = as.integer(m),
+                     nvar = as.integer(nvar),
+                     rounds = as.integer(rounds),
+                     tau = as.double(tau),
+                     h = as.double(h),
+                     tol = as.double(tol),
+                     maxit = as.integer(maxit),
+                     bland_int = as.integer(bland),
+                     ll_est = as.double(ll_est),
+                     d_ll_est = as.double(d_ll_est),
+                     it_num = as.integer(it_num),
+                     residual_est = as.double(residual_est),
+                     H_mat = as.integer(H_mat))
+  
+  # Return results matching R function structure
+  list(
+    ll_est = result$ll_est,
+    d_ll_est = result$d_ll_est,
+    it_num = result$it_num,
+    residual_est = matrix(result$residual_est, nrow = rounds, ncol = m),
+    h = result$h,
+    H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1)
+  )
+}
+
+# ============================================================================ #
+# Sequential plus preprocessing algorithm for one-dim LLQR (Fortran version)
+# ============================================================================ #
+llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
+                                      Mm.factor = 1e-3, tol = 1e-14,
+                                      maxit = 1e6, bland = TRUE) {
+  
+  # Auto-load library if not already loaded
+  # if (!.llqr_ppro_loaded) {
+  #   load_llqr_ppro()
+  # }
+  if (is.null(z)) {
+    z <- x
+  }
+  
+  # Setup
+  m <- length(y)
+  nvar <- 1  # univariate (can be extended for multivariate)
+  rounds <- length(z)
+  
+  # Handle bandwidth - calculate same way as R function
+  if (is.null(h)) {
+    # Using rule of thumb from Yu and Jones 1998 (same as llqr_tau_seq)
+    red_dim <- floor(0.2 * m)
+    index_y <- order(y)[red_dim:(m - red_dim)]
+    h <- KernSmooth::dpill(x[index_y], y[index_y])
+    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
+    if (is.nan(h)) {
+      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
+    }
+  }
+  
+  bland_int <- if (bland) 1L else 0L
+  
+  # Call Fortran
+  result <- .Fortran("llqr_ppro_fortran",
+                     x = as.double(x),
+                     y = as.double(y),
+                     z = as.double(z),
+                     m = as.integer(m),
+                     nvar = as.integer(nvar),
+                     rounds = as.integer(rounds),
+                     tau = as.double(tau),
+                     h = as.double(h),
+                     tol = as.double(tol),
+                     maxit = as.integer(maxit),
+                     Mm_factor = as.double(Mm.factor),
+                     bland_int = as.integer(bland_int),
+                     ll_est = double(rounds),
+                     d_ll_est = double(rounds),
+                     it_num = integer(rounds),
+                     residual_est = matrix(0.0, nrow = rounds, ncol = m),
+                     H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1))
+  
+  # Return results matching R's output format
+  return(list(
+    ll_est = result$ll_est,
+    d_ll_est = result$d_ll_est,
+    it_num = result$it_num,
+    residual_est = result$residual_est,
+    H_seq = result$H_mat  # Note: Named H_seq to match R output
+  ))
+}
+
+

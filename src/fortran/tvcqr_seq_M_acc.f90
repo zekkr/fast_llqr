@@ -1,8 +1,8 @@
 ! Time-varying coefficient quantile regression - Sequential preprocessing
-! Faithful translation of tvcqr_seq3.R with focus on correctness for eva_t <= 4
+! Faithful translation of tvcqr_seq_ppro.R with focus on correctness for eva_t <= 4
 !
 ! Compile with: R CMD SHLIB tvcqr_seq_corrected.f90
-! or: gfortran -shared -fPIC -o tvcqr_seq_corrected.so tvcqr_seq_corrected.f90 -llapack -lblas
+! or: gfortran -shared -fPIC -o tvcqr_seq_M_acc.so tvcqr_seq_M_acc.f90 -llapack -lblas
 
 subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, &
@@ -666,7 +666,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 
                 ! NEW: Ensure minimum subsample size
-                min_subsample_size = max(3 * 2*(nvar+1), 20)
+                min_subsample_size = max(3 * 2*(nvar+1), 100)
 
                 ! Count potential observations in S
                 n_potential_S = 0
