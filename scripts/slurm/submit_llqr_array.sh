@@ -25,11 +25,8 @@ NUM_TASKS=$(( (FASTQR_NUM_REP + FASTQR_CHUNK_SIZE - 1) / FASTQR_CHUNK_SIZE ))
 
 mkdir -p "$PROJECT_DIR/logs"
 
-JOB_NAME="llqr_c${FASTQR_CASE}_tau$(printf '%02d' "$(python3 - <<PY
-import os,math
-tau=float(os.environ['FASTQR_TAU'])
-print(int(round(tau*100)))
-PY)")_n${FASTQR_N}_rep${FASTQR_NUM_REP}"
+TAU_INT=$(awk -v t="$FASTQR_TAU" 'BEGIN{printf "%02d", int(t*100+0.5)}')
+JOB_NAME="llqr_c${FASTQR_CASE}_tau${TAU_INT}_n${FASTQR_N}_rep${FASTQR_NUM_REP}"
 
 cd "$PROJECT_DIR"
 
