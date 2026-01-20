@@ -1,5 +1,8 @@
 # scripts/array/driver_tvcqr_array.R
 # Run TVCQR simulation in SLURM job array (chunked), write partial results per replication.
+# ---- project root ----
+PROJECT_DIR <- normalizePath(Sys.getenv("FASTQR_PROJECT_DIR", unset = getwd()))
+setwd(PROJECT_DIR)
 
 suppressPackageStartupMessages({
   library(microbenchmark)
