@@ -5,7 +5,13 @@ suppressPackageStartupMessages({
   library(microbenchmark)
 })
 
-source("scripts/setup.R")
+setup_file <- if (file.exists("scripts/setup_hpc.R")) {
+  "scripts/setup_hpc.R"
+} else {
+  "scripts/setup.R"
+}
+
+source(setup_file)
 
 as_int <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
@@ -142,6 +148,7 @@ run_one <- function(rep_id) {
   invisible(TRUE)
 }
 
+# Parallelize within the chunk if we have >1 core and >1 rep
 if (ncores > 1 && length(rep_ids) > 1) {
   suppressPackageStartupMessages({
     library(doParallel)
@@ -151,11 +158,15 @@ if (ncores > 1 && length(rep_ids) > 1) {
   on.exit(stopCluster(cl), add = TRUE)
   registerDoParallel(cl)
   
+  clusterExport(cl, c("PROJECT_DIR", "setup_file"), envir = environment())
+  
   clusterEvalQ(cl, {
-    source("scripts/setup.R")
+    setwd(PROJECT_DIR)
+    source(setup_file)
     suppressPackageStartupMessages(library(microbenchmark))
     NULL
   })
+  
   clusterExport(cl, varlist = c("rep_ids", "run_one"), envir = environment())
   
   foreach(r = rep_ids) %dopar% {
@@ -165,5 +176,6 @@ if (ncores > 1 && length(rep_ids) > 1) {
 } else {
   for (r in rep_ids) run_one(r)
 }
+
 
 cat("\n=== LLQR ARRAY DRIVER DONE ===\n")
