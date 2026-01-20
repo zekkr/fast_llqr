@@ -1,7 +1,13 @@
 # scripts/array/merge_llqr_array.R
 # Merge LLQR partial results into a single results object compatible with performance_measurement.R
 
-source("scripts/setup.R")
+setup_file <- if (file.exists("scripts/setup_hpc.R")) {
+  "scripts/setup_hpc.R"
+} else {
+  "scripts/setup.R"
+}
+
+source(setup_file)
 
 as_int <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
