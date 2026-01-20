@@ -7,6 +7,9 @@
 .Rproj.user/
 *.Rproj
 
+# HPC-only build scripts (server local)
+scripts/build/
+
 # =================================
 # Data and Results Directories
 # =================================
