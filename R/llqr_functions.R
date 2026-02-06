@@ -398,12 +398,12 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, tra
         if (bad.signs > 0.1 * ms) {
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
-          cat("Too many fixups:  doubling m at evaluation point ", rd, "\n")
+          # cat("Too many fixups:  doubling m at evaluation point ", rd, "\n")
         } else {
           sh <- sh & !sh.bad
           sl <- sl & !sl.bad
           not_new_sl_sh <- FALSE
-          cat("Fixed some signs at evaluation point ", rd, "\n")
+          # cat("Fixed some signs at evaluation point ", rd, "\n")
         }
       }
       else not_optimal <- FALSE
