@@ -43,6 +43,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
       Mm_factor_local <- Mm_val
       function(x, y, config) {
         llqr_ppro(x = x, y = y, tau = config$tau, z = config$z, 
+                  case = config$case,
                   h = config$h, Mm.factor = Mm_factor_local, 
                   track_order = config$track_order)
       }
@@ -54,6 +55,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
       Mm_factor_local <- Mm_val
       function(x, y, config) {
         llqr_seq_ppro(x = x, y = y, tau = config$tau, z = config$z, 
+                      case = config$case,
                       h = config$h, tol = config$tol, 
                       maxit = config$maxit, bland = config$bland,
                       Mm.factor = Mm_factor_local, 

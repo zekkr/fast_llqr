@@ -280,7 +280,8 @@ llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1
 # Preprocessing algorithm for one-dim LLQR
 # ============================================================================ #
 #Local linear quantile regression for one-dim predictors 
-llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, track_order = F, pmethod = NULL){
+llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, 
+                      track_order = F, case = 1, pmethod = NULL){
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -312,7 +313,11 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, tra
   }
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
-  mm <- max(x.norms) # * log(m)^{1/2} * m^{-0.4}
+  if (case == 1){
+    mm <- log(log(m))/sqrt(log(m))
+  } else if (case == 2) {
+    mm <-  log(m)^(1/2) * m^{-2/5}
+  }
   
   # initialize the output
   ll_est <- rep(0,rounds)
@@ -430,7 +435,8 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, tra
 # Sequential plus preprocessing algorithm for one-dim LLQR
 # ============================================================================ #
 llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
-                              Mm.factor = 1, bland = F, track_order = F, min_subsample_size = NULL){
+                              Mm.factor = 1, bland = F, track_order = F, 
+                              case = 1, min_subsample_size = NULL){
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -468,7 +474,11 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
   #mm <- sqrt(log(m)) * (1 / sqrt(m * h) + h^2) * max(x.norms)
-  mm <- max(x.norms) # * log(m)^(1/2) * m^{-2/5}
+  if (case == 1){
+    mm <- log(log(m))/sqrt(log(m))
+  } else if (case == 2) {
+    mm <-  log(m)^(1/2) * m^{-2/5}
+  }
   
   eva_z <- z[1] - x
   w <- dnorm(eva_z/h)
@@ -938,7 +948,7 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         if (length(k[yy > 0 & !freevarrow]) == 0) {
           # If k is empty, double mmm and break the loop
           mmm <- 2 * mmm
-          cat("The problem is unbounded, doubling m at time ", rd, "\n")
+          # cat("The problem is unbounded, doubling m at time ", rd, "\n")
           break  # Exit the loop to go back to while (not_optimal)
         }
         
@@ -994,12 +1004,12 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         if (bad.signs > 0.1 * ms) { 
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
-          cat("Too many fixups:  doubling m at evaluation point", rd, "\n")
+          # cat("Too many fixups:  doubling m at evaluation point", rd, "\n")
         } else {
           sh <- sh & !sh.bad
           sl <- sl & !sl.bad
           not_new_sl_sh <- FALSE
-          cat("Some fixups: fixing ", rd, "\n")
+          # cat("Some fixups: fixing ", rd, "\n")
         }
       } else {
         not_optimal <- FALSE
