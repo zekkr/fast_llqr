@@ -65,13 +65,13 @@ end function max_array
 
 ! Main PPRO subroutine
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
-                             Mm_factor, bland_int, ll_est, d_ll_est, it_num, &
+                             Mm_factor, case_int, bland_int, ll_est, d_ll_est, it_num, &
                              residual_est, H_mat)
 
     implicit none
 
     ! Input arguments
-    integer, intent(in) :: m, nvar, rounds, maxit, bland_int
+    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int
     double precision, intent(in) :: x(m), y(m), z(rounds), tau, tol, Mm_factor
     double precision, intent(inout) :: h
 
@@ -103,7 +103,6 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
     ! PPRO-specific variables
     double precision :: mm, mmm, M_threshold, residual_scale
-    double precision :: x_norms(m)
     logical :: sl(m), sh(m), not_jl_or_jh(m)
     integer :: ms  ! subsample size
     integer :: H_prev(nvar+1)
@@ -222,14 +221,14 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         A(i, 2) = x(i)
     end do
 
-    ! Compute mm = max(x_norms) for M threshold
-    ! NOTE: R computes x.norms from raw x, NOT from design matrix A
-    ! R code: x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
-    ! For univariate x, this is just abs(x)
-    do i = 1, m
-        x_norms(i) = abs(x(i))
-    end do
-    mm = max_array(x_norms, m)
+    ! Match R llqr_seq_ppro threshold order by data-generation case
+    if (case_int == 1) then
+        mm = log(log(dble(m))) / sqrt(log(dble(m)))
+    else if (case_int == 2) then
+        mm = sqrt(log(dble(m))) * dble(m)**(-0.4d0)
+    else
+        mm = log(log(dble(m))) / sqrt(log(dble(m)))
+    end if
 
     ! ============================================================
     ! ROUND 1: Standard simplex (identical to seq)

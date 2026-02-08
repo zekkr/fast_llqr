@@ -1130,7 +1130,7 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
 # Sequential plus preprocessing algorithm for one-dim LLQR (Fortran version)
 # ============================================================================ #
 llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
-                                      Mm.factor = 1e-3, tol = 1e-14,
+                                      Mm.factor = 1e-3, case = 1, tol = 1e-14,
                                       maxit = 1e6, bland = TRUE) {
   
   # Auto-load library if not already loaded
@@ -1139,6 +1139,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   # }
   if (is.null(z)) {
     z <- x
+  }
+  if (!(case %in% c(1, 2))) {
+    stop("Invalid case specification. Use 1 (normal) or 2 (uniform).")
   }
   
   # Setup
@@ -1173,6 +1176,7 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      tol = as.double(tol),
                      maxit = as.integer(maxit),
                      Mm_factor = as.double(Mm.factor),
+                     case_int = as.integer(case),
                      bland_int = as.integer(bland_int),
                      ll_est = double(rounds),
                      d_ll_est = double(rounds),
@@ -1189,5 +1193,4 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     H_seq = result$H_mat  # Note: Named H_seq to match R output
   ))
 }
-
 
