@@ -436,7 +436,8 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
 # ============================================================================ #
 llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
                               Mm.factor = 1, bland = F, track_order = F, 
-                              case = 1, min_subsample_size = NULL){
+                              case = 1, min_subsample_size = NULL,
+                              store_residual = FALSE){
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -505,7 +506,9 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   it_num <- rep(0,rounds)
   ll_est <- rep(0,rounds)
   d_ll_est <- rep(0,rounds)
-  residual_est <- matrix(0, nrow = m, ncol = m)
+  # Optional residual-history storage: keeping all m x m residuals is O(m^2) memory.
+  residual_est <- if (store_residual) matrix(0, nrow = m, ncol = m) else NULL
+  r_prev <- rep(0, m)
   n_sub <- rep(0, m)
   H_seq <- matrix(0, nrow = m, ncol = nvar+1)
   n_sub[1] <- m
@@ -665,7 +668,10 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     # estbeta_all[, rd] <- estimate
     ll_est[rd] <- crossprod(c(1,z[rd]),estimate)
     d_ll_est[rd] <- estimate[1+nvar]
-    residual_est[rd, ] <- u - v 
+    r_prev <- u - v
+    if (store_residual) {
+      residual_est[rd, ] <- r_prev
+    }
     H <- r1 - 1 - nvar
     H_seq[1, ] <- H
   }
@@ -685,7 +691,8 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     j <- 0
     while (not_optimal) {
       
-      r <- residual_est[rd - 1,]
+      # Only previous residuals are needed to build the current screening sets.
+      r <- r_prev
       if (not_new_sl_sh){
         # Fix 4: Scale threshold to residual magnitude
         residual_scale <- median(abs(r))
@@ -1044,7 +1051,10 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     it_num[rd] <- j
     ll_est[rd] <- crossprod(c(1,z[rd]),estimate)
     d_ll_est[rd] <- estimate[1+nvar]
-    residual_est[rd, ] <- r
+    r_prev <- r
+    if (store_residual) {
+      residual_est[rd, ] <- r
+    }
     n_sub[rd] <- ms
     H_seq[rd,] <- H
   }
@@ -1193,4 +1203,3 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     H_seq = result$H_mat  # Note: Named H_seq to match R output
   ))
 }
-
