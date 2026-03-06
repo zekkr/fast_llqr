@@ -407,7 +407,8 @@ tvc_rq_ppro <- function (x, y, tau = 0.5, h = NULL, Mm.factor = 1e-4, pmethod = 
 # Sequential plus preprocessing algorithm for TVCQR # eps seems not used
 # ============================================================================ #
 tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14, maxit = 1e6,
-                           bland = FALSE, Mm.factor = 1e-4, eps = 1e-06, cpp_helper = FALSE) {
+                           bland = FALSE, Mm.factor = 1e-4, eps = 1e-06, cpp_helper = FALSE,
+                           store_residual = FALSE) {
   x <- as.matrix(x)
   y <- as.matrix(y)
   
@@ -446,7 +447,9 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   # Initialize the output
   it_num <- rep(0, m)
   theta_ll_est <- matrix(0, nrow = m, ncol = nvar + 1)
-  residual_est <- matrix(0, nrow = m, ncol = m)
+  # Optional residual-history storage: keeping all m x m residuals is O(m^2) memory.
+  residual_est <- if (store_residual) matrix(0, nrow = m, ncol = m) else NULL
+  r_prev <- rep(0, m)
   n_sub <- rep(0, m)
   H_seq <- matrix(0, nrow = m, ncol = 2*(nvar+1))
   # test_sl_sh <- rep(0, m)
@@ -607,7 +610,10 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     
     theta_ll_est[1, ] <- estimate[1:(nvar + 1)] + (1 / m) * estimate[(nvar + 2):(2 * (nvar + 1))]
     # residual_est[1, ] <- y - x %*% theta_ll_est[1, ]
-    residual_est[1, ] <- u - v
+    r_prev <- u - v
+    if (store_residual) {
+      residual_est[1, ] <- r_prev
+    }
     H <- r1 - 2 - 2 * nvar
     H_seq[1, ] <- H
   }
@@ -625,7 +631,8 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     j <- 0
     while (not_optimal) {
       
-      r <- residual_est[eva_t - 1,]
+      # Only previous residuals are needed to construct the next screening set.
+      r <- r_prev
       if (not_new_sl_sh){
         # Fix 4: Scale threshold to residual magnitude
         residual_scale <- median(abs(r))
@@ -1004,7 +1011,10 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     }
     it_num[eva_t] <- j 
     theta_ll_est[eva_t, ] <- estimate[1:(nvar + 1)] + (eva_t / m) * estimate[(nvar + 2):(2 * (nvar + 1))]
-    residual_est[eva_t, ] <- r
+    r_prev <- r
+    if (store_residual) {
+      residual_est[eva_t, ] <- r
+    }
     n_sub[eva_t] <- ms
     H_seq[eva_t,] <- H
     # test_sl_sh[eva_t] <- any(sl) + any(sh)
@@ -1175,7 +1185,6 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     h = result$h                     # Bandwidth used (useful if it was calculated)
   ))
 }
-
 
 
 

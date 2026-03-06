@@ -43,7 +43,7 @@ save_tvcqr_simulation_results(results_tvcqr)
 sim_config_llqr <- list(
   case = 1,              # Data generation case
   tau = 0.5,             # Quantile level
-  n = 200,              # Sample size
+  n = 500,              # Sample size
   num_rep = 10,         # Number of replications
   h = NULL,              # Bandwidth (NULL for automatic selection)
   z = NULL,              # Evaluation points (NULL for using x)
@@ -51,7 +51,7 @@ sim_config_llqr <- list(
   maxit = 2e6,           # Maximum iterations
   bland = FALSE,         # Bland's rule for simplex
   track_order = TRUE,   # Track order of evaluation points 
-  Mm.factor = c(1e-3, 1e-4),  # Multiple Mm factors to test
+  Mm.factor = c(1,1e-1,1e-2,1e-3, 1e-4),  # Multiple Mm factors to test
   seed_base = 2025       # Base seed for reproducibility
 )
 

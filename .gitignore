@@ -6,6 +6,8 @@
 .Ruserdata
 .Rproj.user/
 *.Rproj
+.RDataTmp
+*.RDataTmp
 
 # HPC-only build scripts (server local)
 scripts/build/
@@ -22,8 +24,14 @@ scripts/build/
 # Results directory (comment out if you want to track results)
 /results/
 
+# plots / figures outputs
+plots/
+
 # Old code directory (comment out if you want to track old code)
 /old_code/
+
+# tmp directory
+/tmp/
 
 # =================================
 # Compiled Code and Build Artifacts
