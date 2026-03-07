@@ -88,9 +88,15 @@ create_llqr_methods <- function(Mm.factor_vec) {
 #' @return List containing estimates, H_seq, and timing results
 #' @export
 run_single_llqr_replication <- function(rep_id, config, methods) {
+  seed_used <- if (!is.null(config$seed_used)) {
+    as.integer(config$seed_used)
+  } else {
+    as.integer(config$seed_base + rep_id)
+  }
+
   # Generate data
   data <- generate_data(n = config$n, case = config$case, 
-                        seed = config$seed_base + rep_id)
+                        seed = seed_used)
   x <- data$x
   y <- data$y
   
@@ -128,6 +134,8 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean
   }
+
+  results$seed_used <- seed_used
   
   return(results)
 }

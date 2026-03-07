@@ -61,6 +61,9 @@ maxit     <- as_int("FASTQR_MAXIT", 2e6)
 bland     <- as_bool("FASTQR_BLAND", FALSE)
 track_order <- as_bool("FASTQR_TRACK_ORDER", TRUE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2026)
+max_attempts_per_rep <- as_int("FASTQR_MAX_ATTEMPTS_PER_REP", 20)
+retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
+if (max_attempts_per_rep <= 0) max_attempts_per_rep <- 1
 
 config_base <- list(
   case = case,
@@ -89,6 +92,8 @@ cat(sprintf("rep range: %d-%d (len=%d)\n", rep_start, rep_end, length(rep_ids)))
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("seed_base:", seed_base, "\n\n")
+cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
+cat("retry_stride:", retry_stride, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -102,52 +107,66 @@ run_one <- function(rep_id) {
   rep_config <- config_base
   rep_config$num_rep <- 1
   rep_config$rep_id <- rep_id
-  
-  out <- tryCatch({
-    rr <- run_single_llqr_replication(rep_id, rep_config, methods)
-    
-    timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
-                            dimnames = list(NULL, method_names))
-    for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
-    
-    estimates_list <- setNames(vector("list", length(method_names)), method_names)
-    H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
-    for (m in method_names) {
-      estimates_list[[m]] <- list(rr$estimates[[m]])
-      H_seq_list[[m]]     <- list(rr$H_seq[[m]])
-    }
-    
-    partial_results <- list(
-      config = rep_config,
-      timing_matrix = timing_matrix,
-      estimates_list = estimates_list,
-      H_seq_list = H_seq_list,
-      method_names = method_names,
-      Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
-      timestamp = Sys.time(),
-      simulation_type = "llqr_partial",
-      status = "success",
-      error_msg = NULL
-    )
-    
-    list(ok = TRUE, obj = partial_results)
-  }, error = function(e) {
-    partial_results <- list(
-      config = rep_config,
-      method_names = method_names,
-      timestamp = Sys.time(),
-      simulation_type = "llqr_partial",
-      status = "error",
-      error_msg = conditionMessage(e)
-    )
-    list(ok = FALSE, obj = partial_results)
-  })
+
+  out <- NULL
+  for (attempt in seq_len(max_attempts_per_rep)) {
+    seed_used <- as.integer(seed_base + rep_id + (attempt - 1L) * retry_stride)
+    rep_config$seed_used <- seed_used
+
+    out <- tryCatch({
+      rr <- run_single_llqr_replication(rep_id, rep_config, methods)
+
+      timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
+                              dimnames = list(NULL, method_names))
+      for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
+
+      estimates_list <- setNames(vector("list", length(method_names)), method_names)
+      H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
+      for (m in method_names) {
+        estimates_list[[m]] <- list(rr$estimates[[m]])
+        H_seq_list[[m]]     <- list(rr$H_seq[[m]])
+      }
+
+      partial_results <- list(
+        config = rep_config,
+        timing_matrix = timing_matrix,
+        estimates_list = estimates_list,
+        H_seq_list = H_seq_list,
+        method_names = method_names,
+        Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
+        timestamp = Sys.time(),
+        simulation_type = "llqr_partial",
+        status = "success",
+        error_msg = NULL,
+        seed_used = seed_used,
+        attempts = attempt
+      )
+
+      list(ok = TRUE, obj = partial_results)
+    }, error = function(e) {
+      partial_results <- list(
+        config = rep_config,
+        method_names = method_names,
+        timestamp = Sys.time(),
+        simulation_type = "llqr_partial",
+        status = "error",
+        error_msg = conditionMessage(e),
+        seed_used = seed_used,
+        attempts = attempt
+      )
+      list(ok = FALSE, obj = partial_results)
+    })
+
+    if (isTRUE(out$ok)) break
+  }
   
   save_path <- file.path(partial_dir, sprintf("rep%04d.RData", rep_id))
   partial_results <- out$obj
   save(partial_results, file = save_path)
-  cat(sprintf("[%s] rep=%d -> %s (%s)\n",
-              format(Sys.time(), "%F %T"), rep_id, save_path,
+  cat(sprintf("[%s] rep=%d attempt=%d seed=%d -> %s (%s)\n",
+              format(Sys.time(), "%F %T"), rep_id,
+              partial_results$attempts, partial_results$seed_used,
+              save_path,
               partial_results$status))
   invisible(TRUE)
 }
