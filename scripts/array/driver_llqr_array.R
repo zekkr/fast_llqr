@@ -38,6 +38,11 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+require_pos_int <- function(x, name) {
+  if (is.na(x) || !is.finite(x) || x < 1L) {
+    stop(sprintf("%s must be a positive integer, got: %s", name, as.character(x)))
+  }
+}
 
 task_id  <- as_int("SLURM_ARRAY_TASK_ID", 1)
 ncores   <- as_int("SLURM_CPUS_PER_TASK", 1)
@@ -48,7 +53,17 @@ n        <- as_int("FASTQR_N", 500)
 num_rep  <- as_int("FASTQR_NUM_REP", 500)
 
 chunk_size <- as_int("FASTQR_CHUNK_SIZE", ncores)
-if (chunk_size <= 0) chunk_size <- 1
+require_pos_int(task_id, "SLURM_ARRAY_TASK_ID")
+require_pos_int(ncores, "SLURM_CPUS_PER_TASK")
+require_pos_int(n, "FASTQR_N")
+require_pos_int(num_rep, "FASTQR_NUM_REP")
+require_pos_int(chunk_size, "FASTQR_CHUNK_SIZE")
+if (!(case %in% c(1L, 2L))) {
+  stop(sprintf("FASTQR_CASE must be 1 or 2, got: %s", as.character(case)))
+}
+if (is.na(tau) || !is.finite(tau) || tau <= 0 || tau >= 1) {
+  stop(sprintf("FASTQR_TAU must be in (0,1), got: %s", as.character(tau)))
+}
 
 rep_start <- (task_id - 1L) * chunk_size + 1L
 rep_end   <- min(task_id * chunk_size, num_rep)
@@ -63,7 +78,16 @@ track_order <- as_bool("FASTQR_TRACK_ORDER", TRUE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 max_attempts_per_rep <- as_int("FASTQR_MAX_ATTEMPTS_PER_REP", 20)
 retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
-if (max_attempts_per_rep <= 0) max_attempts_per_rep <- 1
+require_pos_int(seed_base, "FASTQR_SEED_BASE")
+require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
+require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
+if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
+  stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
+}
+if (is.na(tol) || !is.finite(tol) || tol <= 0) {
+  stop(sprintf("FASTQR_TOL must be > 0, got: %s", as.character(tol)))
+}
+require_pos_int(maxit, "FASTQR_MAXIT")
 
 config_base <- list(
   case = case,

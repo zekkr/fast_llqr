@@ -3,6 +3,10 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-/home/$USER/WORK/Erkang/fast_llqr}"
 
+is_pos_int() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]
+}
+
 export FASTQR_CASE="${FASTQR_CASE:-1}"
 export FASTQR_TAU="${FASTQR_TAU:-0.5}"
 export FASTQR_N="${FASTQR_N:-500}"
@@ -14,6 +18,8 @@ export FASTQR_MAXIT="${FASTQR_MAXIT:-2000000}"
 export FASTQR_BLAND="${FASTQR_BLAND:-0}"
 export FASTQR_TRACK_ORDER="${FASTQR_TRACK_ORDER:-1}"
 export FASTQR_SEED_BASE="${FASTQR_SEED_BASE:-2026}"
+export FASTQR_MAX_ATTEMPTS_PER_REP="${FASTQR_MAX_ATTEMPTS_PER_REP:-20}"
+export FASTQR_RETRY_STRIDE="${FASTQR_RETRY_STRIDE:-1000000}"
 
 CPUS_PER_TASK="${CPUS_PER_TASK:-56}"
 WALLTIME="${WALLTIME:-04:00:00}"
@@ -21,6 +27,35 @@ PARTITION="${PARTITION:-cnall}"
 ACCOUNT="${ACCOUNT:-users}"
 
 export FASTQR_CHUNK_SIZE="${FASTQR_CHUNK_SIZE:-$CPUS_PER_TASK}"
+
+if [[ "$FASTQR_CASE" != "1" && "$FASTQR_CASE" != "2" ]]; then
+  echo "ERROR: FASTQR_CASE must be 1 or 2, got '$FASTQR_CASE'" >&2
+  exit 1
+fi
+
+if ! awk -v t="$FASTQR_TAU" 'BEGIN { exit !(t+0==t && t>0 && t<1) }'; then
+  echo "ERROR: FASTQR_TAU must be numeric and in (0,1), got '$FASTQR_TAU'" >&2
+  exit 1
+fi
+
+for v in FASTQR_N FASTQR_NUM_REP CPUS_PER_TASK FASTQR_CHUNK_SIZE FASTQR_MAX_ATTEMPTS_PER_REP FASTQR_RETRY_STRIDE; do
+  val="${!v}"
+  if ! is_pos_int "$val"; then
+    echo "ERROR: $v must be a positive integer, got '$val'" >&2
+    exit 1
+  fi
+done
+
+if [[ -z "$FASTQR_MM_FACTOR" ]]; then
+  echo "ERROR: FASTQR_MM_FACTOR is empty" >&2
+  exit 1
+fi
+
+if [[ ! -d "$PROJECT_DIR" ]]; then
+  echo "ERROR: PROJECT_DIR does not exist: $PROJECT_DIR" >&2
+  exit 1
+fi
+
 NUM_TASKS=$(( (FASTQR_NUM_REP + FASTQR_CHUNK_SIZE - 1) / FASTQR_CHUNK_SIZE ))
 
 mkdir -p "$PROJECT_DIR/logs"
@@ -78,4 +113,3 @@ EOF
 )
 
 echo "Submitted merge job: ${MERGE_JOB_ID} (afterok:${ARRAY_JOB_ID})"
-
