@@ -78,9 +78,11 @@ track_order <- as_bool("FASTQR_TRACK_ORDER", TRUE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 max_attempts_per_rep <- as_int("FASTQR_MAX_ATTEMPTS_PER_REP", 20)
 retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
+max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
+require_pos_int(max_seconds_per_rep, "FASTQR_MAX_SECONDS_PER_REP")
 if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
   stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
 }
@@ -118,6 +120,7 @@ cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")
+cat("max_seconds_per_rep:", max_seconds_per_rep, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -126,6 +129,29 @@ if (length(rep_ids) == 0) {
 
 methods <- create_llqr_methods(config_base$Mm.factor)
 method_names <- names(methods)
+
+run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec) {
+  if (.Platform$OS.type != "unix") {
+    setTimeLimit(elapsed = timeout_sec, transient = TRUE)
+    on.exit(setTimeLimit(cpu = Inf, elapsed = Inf, transient = FALSE), add = TRUE)
+    return(run_single_llqr_replication(rep_id, rep_config, methods))
+  }
+
+  child <- parallel::mcparallel({
+    run_single_llqr_replication(rep_id, rep_config, methods)
+  }, silent = TRUE)
+
+  collected <- parallel::mccollect(child, wait = FALSE, timeout = timeout_sec)
+  if (is.null(collected)) {
+    try(parallel::mckill(child$pid, signal = 9L), silent = TRUE)
+    try(parallel::mccollect(child, wait = FALSE, timeout = 0), silent = TRUE)
+    stop(sprintf("rep exceeded %d seconds", timeout_sec))
+  }
+
+  rr <- collected[[1L]]
+  if (inherits(rr, "try-error")) stop(as.character(rr))
+  rr
+}
 
 run_one <- function(rep_id) {
   rep_config <- config_base
@@ -138,7 +164,7 @@ run_one <- function(rep_id) {
     rep_config$seed_used <- seed_used
 
     out <- tryCatch({
-      rr <- run_single_llqr_replication(rep_id, rep_config, methods)
+      rr <- run_rep_with_timeout(rep_id, rep_config, methods, max_seconds_per_rep)
 
       timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
                               dimnames = list(NULL, method_names))
@@ -163,7 +189,8 @@ run_one <- function(rep_id) {
         status = "success",
         error_msg = NULL,
         seed_used = seed_used,
-        attempts = attempt
+        attempts = attempt,
+        max_seconds_per_rep = max_seconds_per_rep
       )
 
       list(ok = TRUE, obj = partial_results)
@@ -176,7 +203,8 @@ run_one <- function(rep_id) {
         status = "error",
         error_msg = conditionMessage(e),
         seed_used = seed_used,
-        attempts = attempt
+        attempts = attempt,
+        max_seconds_per_rep = max_seconds_per_rep
       )
       list(ok = FALSE, obj = partial_results)
     })
