@@ -1081,6 +1081,9 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
   if (is.null(z)) {
     z <- x
   }
+  z <- as.vector(z)
+  # Keep output row order consistent with R llqr_seq/llqr_seq_ppro (sorted-z order).
+  z <- z[order(z)]
   
   # Get dimensions
   m <- length(x)
@@ -1150,6 +1153,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   if (is.null(z)) {
     z <- x
   }
+  z <- as.vector(z)
+  # Keep output row order consistent with R llqr_seq/llqr_seq_ppro (sorted-z order).
+  z <- z[order(z)]
   if (!(case %in% c(1, 2))) {
     stop("Invalid case specification. Use 1 (normal) or 2 (uniform).")
   }
