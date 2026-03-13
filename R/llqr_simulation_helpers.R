@@ -10,13 +10,72 @@
 #' @param Mm.factor_vec Vector of Mm.factor values to test
 #' @return Named list of method functions
 #' @export
+compute_llqr_rule_bandwidth <- function(x, y, tau, h = NULL) {
+  x <- as.matrix(x)
+  y <- as.matrix(y)
+  m <- nrow(x)
+  nvar <- ncol(x)
+
+  if (!is.null(h)) {
+    return(as.numeric(h))
+  }
+
+  red_dim <- floor(0.2 * m)
+  index_y <- order(y)[red_dim:(m - red_dim)]
+  h_val <- KernSmooth::dpill(x[index_y, , drop = FALSE], y[index_y])
+  h_val <- 1.25 * h_val * (tau * (1 - tau) / (dnorm(qnorm(tau)))^2)^0.2
+  if (is.nan(h_val)) {
+    h_val <- 1.25 * max(m^(-1 / (nvar + 4)), min(2, sd(y)) * m^(-1 / (nvar + 4)))
+  }
+
+  as.numeric(h_val)
+}
+
+run_llqr_baseline_with_retry <- function(x, y, config) {
+  retry_factors <- config$llqr_h_retry_factors
+  if (is.null(retry_factors) || length(retry_factors) == 0) {
+    retry_factors <- c(1, 1.25, 1.5, 2, 4, 8)
+  }
+  retry_factors <- as.numeric(retry_factors)
+  retry_factors <- retry_factors[is.finite(retry_factors) & retry_factors > 0]
+  if (length(retry_factors) == 0) {
+    stop("config$llqr_h_retry_factors must contain positive numeric values.")
+  }
+
+  base_h <- compute_llqr_rule_bandwidth(x = x, y = y, tau = config$tau, h = config$h)
+  last_error <- NULL
+
+  for (i in seq_along(retry_factors)) {
+    h_used <- as.numeric(base_h * retry_factors[i])
+    fit <- tryCatch(
+      quantdr::llqr(x = x, y = y, tau = config$tau, h = h_used,
+                    method = "rule", x0 = NULL),
+      error = function(e) e
+    )
+
+    if (!inherits(fit, "error")) {
+      fit$h <- h_used
+      fit$h_used <- h_used
+      fit$h_retry_factor <- retry_factors[i]
+      fit$llqr_attempts <- i
+      return(fit)
+    }
+
+    last_error <- fit
+    if (!grepl("Singular design matrix", conditionMessage(fit), fixed = TRUE)) {
+      stop(fit)
+    }
+  }
+
+  stop(last_error)
+}
+
 create_llqr_methods <- function(Mm.factor_vec) {
   methods <- list()
   
   # Methods without Mm.factor parameter
   methods$llqr <- function(x, y, config) {
-    quantdr::llqr(x = x, y = y, tau = config$tau, h = config$h, 
-                  method = "rule", x0 = NULL)
+    run_llqr_baseline_with_retry(x = x, y = y, config = config)
   }
   
   methods$llqr_seq <- function(x, y, config) {
@@ -104,11 +163,13 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
   results <- list(
     estimates = vector("list", length(methods)),
     H_seq = vector("list", length(methods)),
-    timing = numeric(length(methods))
+    timing = numeric(length(methods)),
+    method_metadata = vector("list", length(methods))
   )
   names(results$estimates) <- names(methods)
   names(results$H_seq) <- names(methods)
   names(results$timing) <- names(methods)
+  names(results$method_metadata) <- names(methods)
   
   # Run each method
   for (method_name in names(methods)) {
@@ -130,6 +191,12 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     } else {
       results$H_seq[[method_name]] <- NULL
     }
+
+    results$method_metadata[[method_name]] <- list(
+      h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
+      h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
+      llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_
+    )
     
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean

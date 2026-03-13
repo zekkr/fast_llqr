@@ -172,16 +172,21 @@ run_one <- function(rep_id) {
 
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
       H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
+      method_metadata <- setNames(vector("list", length(method_names)), method_names)
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
         H_seq_list[[m]]     <- list(rr$H_seq[[m]])
+        method_metadata[[m]] <- rr$method_metadata[[m]]
       }
+
+      llqr_meta <- rr$method_metadata[["llqr"]]
 
       partial_results <- list(
         config = rep_config,
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
         H_seq_list = H_seq_list,
+        method_metadata = method_metadata,
         method_names = method_names,
         Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
         timestamp = Sys.time(),
@@ -190,7 +195,10 @@ run_one <- function(rep_id) {
         error_msg = NULL,
         seed_used = seed_used,
         attempts = attempt,
-        max_seconds_per_rep = max_seconds_per_rep
+        max_seconds_per_rep = max_seconds_per_rep,
+        h_used = if (!is.null(llqr_meta$h_used)) llqr_meta$h_used else NA_real_,
+        h_retry_factor = if (!is.null(llqr_meta$h_retry_factor)) llqr_meta$h_retry_factor else NA_real_,
+        llqr_attempts = if (!is.null(llqr_meta$llqr_attempts)) llqr_meta$llqr_attempts else NA_integer_
       )
 
       list(ok = TRUE, obj = partial_results)
