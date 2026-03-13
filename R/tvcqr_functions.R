@@ -454,6 +454,24 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   H_seq <- matrix(0, nrow = m, ncol = 2*(nvar+1))
   # test_sl_sh <- rep(0, m)
   n_sub[1] <- m
+  min_subsample_size <- max(5 * (nvar + 1), ceiling(0.2 * m))
+  residual_tol <- 1e-8
+  rank_tol <- 1e-10
+  max_empty_pivot_retries <- 3L
+
+  is_valid_tvcqr_H <- function(H_idx, r_vec) {
+    p <- 2 * (nvar + 1)
+    H_idx <- as.integer(H_idx)
+    if (length(H_idx) != p ||
+        anyNA(H_idx) ||
+        any(H_idx < 1L | H_idx > m) ||
+        anyDuplicated(H_idx)) {
+      return(FALSE)
+    }
+    AH <- A[H_idx, , drop = FALSE]
+    rank_ok <- qr(AH, tol = rank_tol)$rank == p
+    rank_ok && (max(abs(r_vec[H_idx])) <= residual_tol)
+  }
   
   # t = 1
   {  
@@ -626,6 +644,8 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     # print(eva_t)
     not_optimal <- TRUE
     not_new_sl_sh <- TRUE
+    force_full_sample <- FALSE
+    empty_pivot_count <- 0L
     w <- 0.75 * (1 - ((eva_t / m - time_index) / h)^2) * (abs(eva_t / m - time_index) <= h) 
     mmm <- mm 
     j <- 0
@@ -633,13 +653,13 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       
       # Only previous residuals are needed to construct the next screening set.
       r <- r_prev
-      if (not_new_sl_sh){
+      if (force_full_sample) {
+        sl <- rep(FALSE, m)
+        sh <- rep(FALSE, m)
+      } else if (not_new_sl_sh){
         # Fix 4: Scale threshold to residual magnitude
         residual_scale <- median(abs(r))
         M <- max(Mm.factor * mmm * log(log(m)), 0.1 * residual_scale) #Mm.factor * mmm * log(log(m))
-        
-        # NEW: Ensure minimum subsample size
-        min_subsample_size <- max(3 * 2*(nvar+1), 100)  # At least 3x the number of free variables
         
         # If too few observations would remain, increase M
         n_potential_S <- sum(abs(r) <= M)
@@ -850,6 +870,7 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       }
       
       # Simplex iteration
+      no_pivot_attempt <- FALSE
       while (j < maxit){
         # print(j)
         # start iteration
@@ -909,12 +930,8 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
         k <- bs / yy
         
         if (length(k[yy > 0 & !freevarrow]) == 0) {
-          
-          
-          # If k is empty, double mmm and break the loop
-          mmm <- 2 * mmm
-          #cat("The problem is unbounded, doubling m at time ", eva_t, "\n")
-          break  # Exit the loop to go back to while (not_optimal)
+          no_pivot_attempt <- TRUE
+          break
         }
         
         if (bland){
@@ -957,6 +974,16 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
         
         j <- j + 1
       }
+
+      if (isTRUE(no_pivot_attempt)) {
+        empty_pivot_count <- empty_pivot_count + 1L
+        mmm <- 2 * mmm
+        not_new_sl_sh <- TRUE
+        if (empty_pivot_count >= max_empty_pivot_retries) {
+          force_full_sample <- TRUE
+        }
+        next
+      }
       
       estimate <- bs[1:(2*(nvar + 1))]
       # Check signs of residuals
@@ -968,23 +995,28 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       sh.bad <- (r < 0) & sh
       sl.bad <- (r > 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
-      if (bad.signs > 0) {
+      H_candidate <- r1 - 2 - 2 * nvar
+      H_candidate <- idx_not_jl_or_jh[H_candidate]
+      accept_subsample <- (bad.signs == 0) && is_valid_tvcqr_H(H_candidate, r)
+      if (!accept_subsample) {
         if (bad.signs > 0.1 * ms) { 
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
           #cat("Too many fixups:  doubling m at time ", eva_t, "\n")
-        } else {
+        } else if (bad.signs > 0) {
           sh <- sh & !sh.bad
           sl <- sl & !sl.bad
           not_new_sl_sh <- FALSE
           #cat("Some fixups: fixing ", eva_t, "\n")
+        } else {
+          mmm <- 2 * mmm
+          not_new_sl_sh <- TRUE
         }
       }
-      else { # reach optimality
+      if (accept_subsample) { # reach optimality
         not_optimal <- FALSE
         # the index corresponding to r1 in the 1~m raw data
-        H <- r1 - 2 - 2 * nvar
-        H <- idx_not_jl_or_jh[H]
+        H <- H_candidate
         r[H] <- 0 # set the residuals of H to 0, avoid numerical issues
         if (eva_t < m){
           gammaxs.temp[1:(2*(nvar+1)),] <- gammaxs[1:(2*(nvar+1)),]
@@ -1185,6 +1217,3 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     h = result$h                     # Bandwidth used (useful if it was calculated)
   ))
 }
-
-
-

@@ -469,8 +469,26 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   }
   
   if (is.null(min_subsample_size)){
-    # NEW: Ensure minimum subsample size
-    min_subsample_size <- max(20, ceiling(0.2 * m))
+    min_subsample_size <- max(5 * (nvar + 1), ceiling(0.2 * m))
+  }
+  residual_tol <- 1e-8
+  rank_tol <- 1e-10
+  max_empty_pivot_retries <- 3L
+
+  is_valid_llqr_H <- function(H_idx, r_vec) {
+    H_idx <- as.integer(H_idx)
+    if (length(H_idx) != (nvar + 1) ||
+        anyNA(H_idx) ||
+        any(H_idx < 1L | H_idx > m) ||
+        anyDuplicated(H_idx)) {
+      return(FALSE)
+    }
+    rank_ok <- if (nvar == 1L) {
+      abs(A[H_idx[2], 2] - A[H_idx[1], 2]) > rank_tol
+    } else {
+      qr(A[H_idx, , drop = FALSE], tol = rank_tol)$rank == (nvar + 1)
+    }
+    rank_ok && (max(abs(r_vec[H_idx])) <= residual_tol)
   }
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
@@ -684,6 +702,8 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     # print(rd)
     not_optimal <- TRUE
     not_new_sl_sh <- TRUE
+    force_full_sample <- FALSE
+    empty_pivot_count <- 0L
     eva_z <- z[rd] - x
     w <- dnorm(eva_z/h)
     mmm <- mm
@@ -693,7 +713,10 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
       
       # Only previous residuals are needed to build the current screening sets.
       r <- r_prev
-      if (not_new_sl_sh){
+      if (force_full_sample) {
+        sl <- rep(FALSE, m)
+        sh <- rep(FALSE, m)
+      } else if (not_new_sl_sh){
         # Fix 4: Scale threshold to residual magnitude
         residual_scale <- median(abs(r))
         M <- max(Mm.factor * mmm * log(log(m)), 0.1 * residual_scale) #Mm.factor * mmm * log(log(m))
@@ -898,6 +921,7 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         bs <- c(bs,0)
       }
       
+      no_pivot_attempt <- FALSE
       while (j < maxit){
         # print(j)
         # start iteration
@@ -953,10 +977,8 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         k <- bs / yy
         
         if (length(k[yy > 0 & !freevarrow]) == 0) {
-          # If k is empty, double mmm and break the loop
-          mmm <- 2 * mmm
-          # cat("The problem is unbounded, doubling m at time ", rd, "\n")
-          break  # Exit the loop to go back to while (not_optimal)
+          no_pivot_attempt <- TRUE
+          break
         }
         
         if (bland){
@@ -999,6 +1021,16 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         
         j <- j + 1
       }
+
+      if (isTRUE(no_pivot_attempt)) {
+        empty_pivot_count <- empty_pivot_count + 1L
+        mmm <- 2 * mmm
+        not_new_sl_sh <- TRUE
+        if (empty_pivot_count >= max_empty_pivot_retries) {
+          force_full_sample <- TRUE
+        }
+        next
+      }
       
       estimate <- bs[1:(nvar + 1)]
       
@@ -1007,22 +1039,27 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
       sh.bad <- (r < 0) & sh
       sl.bad <- (r > 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
-      if (bad.signs > 0) {
+      H_candidate <- r1 - 1 - nvar
+      H_candidate <- idx_not_jl_or_jh[H_candidate]
+      accept_subsample <- (bad.signs == 0) && is_valid_llqr_H(H_candidate, r)
+      if (!accept_subsample) {
         if (bad.signs > 0.1 * ms) { 
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
           # cat("Too many fixups:  doubling m at evaluation point", rd, "\n")
-        } else {
+        } else if (bad.signs > 0) {
           sh <- sh & !sh.bad
           sl <- sl & !sl.bad
           not_new_sl_sh <- FALSE
           # cat("Some fixups: fixing ", rd, "\n")
+        } else {
+          mmm <- 2 * mmm
+          not_new_sl_sh <- TRUE
         }
-      } else {
+      }
+      if (accept_subsample) {
         not_optimal <- FALSE
-        # the index corresponding to r1 in the 1~m raw data
-        H <- r1 - 1 - nvar
-        H <- idx_not_jl_or_jh[H]
+        H <- H_candidate
         r[H] <- 0 # set the residuals of H to 0, avoid numerical issues
         if (rd < m){
           gammaxs.temp[1:(nvar+1),] <- gammaxs[1:(nvar+1),]

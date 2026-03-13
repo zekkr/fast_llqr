@@ -28,25 +28,80 @@ subroutine inv22(mat, inv_mat, success)
     success = .true.
 end subroutine inv22
 
-! Helper function: compute mean of absolute values - O(n) instead of median's O(n log n)
-! Helper function: median of absolute values
-! IMPORTANT: Must match R's median(abs(r)) exactly
+! Quickselect helper for median computation (average O(n))
+subroutine quickselect_inplace(a, n, k, kth_val)
+    implicit none
+    integer, intent(in) :: n, k
+    double precision, intent(inout) :: a(n)
+    double precision, intent(out) :: kth_val
+    integer :: left, right, i, store, pivot_idx
+    double precision :: pivot_val, tmp
+
+    left = 1
+    right = n
+    do
+        if (left == right) then
+            kth_val = a(left)
+            return
+        end if
+
+        pivot_idx = (left + right) / 2
+        pivot_val = a(pivot_idx)
+
+        tmp = a(pivot_idx)
+        a(pivot_idx) = a(right)
+        a(right) = tmp
+
+        store = left
+        do i = left, right - 1
+            if (a(i) < pivot_val) then
+                tmp = a(store)
+                a(store) = a(i)
+                a(i) = tmp
+                store = store + 1
+            end if
+        end do
+
+        tmp = a(right)
+        a(right) = a(store)
+        a(store) = tmp
+
+        if (k == store) then
+            kth_val = a(store)
+            return
+        else if (k < store) then
+            right = store - 1
+        else
+            left = store + 1
+        end if
+    end do
+end subroutine quickselect_inplace
+
+! Helper function: median of absolute values (matches R's median(abs(r)))
 function median_abs(arr, n) result(median_val)
-    ! NOTE: Despite the name, this computes MEAN(abs(arr)) for performance
-    ! Sorting for true median is too expensive for large n (O(n log n) vs O(n))
     implicit none
     integer, intent(in) :: n
     double precision, intent(in) :: arr(n)
     double precision :: median_val
-    integer :: i
-    double precision :: sum_abs
+    double precision :: work(n), v1, v2
+    integer :: i, k1, k2
 
-    ! Compute mean of absolute values (fast O(n) operation)
-    sum_abs = 0.0d0
     do i = 1, n
-        sum_abs = sum_abs + abs(arr(i))
+        work(i) = abs(arr(i))
     end do
-    median_val = sum_abs / dble(n)
+
+    k1 = (n + 1) / 2
+    k2 = (n + 2) / 2
+    call quickselect_inplace(work, n, k1, v1)
+    if (k1 == k2) then
+        median_val = v1
+    else
+        do i = 1, n
+            work(i) = abs(arr(i))
+        end do
+        call quickselect_inplace(work, n, k2, v2)
+        median_val = 0.5d0 * (v1 + v2)
+    end if
 end function median_abs
 
 ! Helper function: max of array
@@ -108,6 +163,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: H_prev(nvar+1)
     integer :: n_bad_signs
     logical :: not_optimal, not_new_sl_sh  ! Bad signs loop control
+    logical :: force_full_sample, no_pivot_flag, accept_subsample
+    integer :: empty_pivot_count, max_empty_pivot_retries
+    double precision :: res_tol
 
     ! Subsample arrays (will be allocated dynamically in concept, but use max size)
     double precision :: gammaxs(m+2, nvar+1)  ! max possible size
@@ -181,6 +239,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     ! Constants
     pi = 4.0d0 * atan(1.0d0)
     bland = (bland_int /= 0)
+    res_tol = 1.0d-8
+    max_empty_pivot_retries = 3
 
     ! Set default bandwidth
     if (h <= 0.0d0) then
@@ -309,7 +369,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
     ! Run simplex for round 1 (using PPRO simplex which also works for cold start)
     call run_simplex_ppro(gammax, b, IB, freevarrow, r1, r2, rr, w, m+1, m, nvar, &
-                          tau, tol, maxit, bland, iter)
+                          tau, tol, maxit, bland, iter, no_pivot_flag)
+    if (no_pivot_flag) iter = maxit
 
     ! Extract solution for round 1
     call extract_solution(gammax, b, IB, m, nvar, estimate, u, v, r1)
@@ -334,6 +395,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         ! Initialize bad signs loop control
         not_optimal = .true.
         not_new_sl_sh = .true.
+        force_full_sample = .false.
+        empty_pivot_count = 0
         mmm = mm
 
         ! Compute kernel weights for current z (USING SORTED Z!)
@@ -353,9 +416,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 residual_scale = median_abs(r, m)
                 M_threshold = max(Mm_factor * mmm * log(log(dble(m))), 0.1d0 * residual_scale)
 
-                ! R's minimum subsample size check (lines 528-533 in R code)
-                ! R uses constant 20, NOT min(100, m/2)
-                min_subsample_size = 20
+                min_subsample_size = max(5*(nvar + 1), ceiling(0.2d0 * dble(m)))
 
                 ! OPTIMIZATION: Compute max_r once instead of in loop
                 min_k = maxval(abs(r))
@@ -384,6 +445,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         end if
                     end if
                 end do
+            end if
+
+            if (force_full_sample) then
+                sl = .false.
+                sh = .false.
+                not_jl_or_jh = .true.
             end if
 
         ! Count subsample size
@@ -856,7 +923,16 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Pass m (actual leading dimension), not ms+1
             ! The array gammaxs_simplex has dimension (m, nvar+1), not (ms+1, nvar+1)
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m, ms, nvar, tau, tol, maxit, bland, iter)
+                                  m, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
+            if (no_pivot_flag) then
+                empty_pivot_count = empty_pivot_count + 1
+                mmm = mmm * 2.0d0
+                not_new_sl_sh = .true.
+                if (empty_pivot_count >= max_empty_pivot_retries) then
+                    force_full_sample = .true.
+                end if
+                cycle
+            end if
 
 
             ! Extract solution from subsample
@@ -1025,7 +1101,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 !DEBUG                        if (n_neg_prev > 0) write(*,*) 'idx_Hbar_neg (first 5):', idx_Hbar_neg(1:min(5, n_neg_prev))
 !DEBUG                    end if
 
-                    not_optimal = .false.
+                    accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                    if (accept_subsample) then
+                        not_optimal = .false.
+                    else
+                        mmm = mmm * 2.0d0
+                        not_new_sl_sh = .true.
+                    end if
                 end if
             else
                 ! No sl or sh: automatically good
@@ -1093,7 +1175,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 !DEBUG                    if (n_neg_prev > 0) write(*,*) 'idx_Hbar_neg (first 5):', idx_Hbar_neg(1:min(5, n_neg_prev))
 !DEBUG                end if
 
-                not_optimal = .false.
+                accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                if (accept_subsample) then
+                    not_optimal = .false.
+                else
+                    mmm = mmm * 2.0d0
+                    not_new_sl_sh = .true.
+                end if
             end if
 
         else if (rd > 2) then
@@ -1633,7 +1721,16 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
             ! Run simplex (same as rd==2)
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m, ms, nvar, tau, tol, maxit, bland, iter)
+                                  m, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
+            if (no_pivot_flag) then
+                empty_pivot_count = empty_pivot_count + 1
+                mmm = mmm * 2.0d0
+                not_new_sl_sh = .true.
+                if (empty_pivot_count >= max_empty_pivot_retries) then
+                    force_full_sample = .true.
+                end if
+                cycle
+            end if
 
             ! Extract solution (same as rd==2)
             call extract_solution(gammaxs_simplex, bs_simplex, IBs, ms, nvar, estimate, &
@@ -1721,7 +1818,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         end if
                     end do
 
-                    not_optimal = .false.
+                    accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                    if (accept_subsample) then
+                        not_optimal = .false.
+                    else
+                        mmm = mmm * 2.0d0
+                        not_new_sl_sh = .true.
+                    end if
                 end if
             else
                 ! No sl or sh: automatically good, store for next round
@@ -1755,7 +1858,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 end do
 
-                not_optimal = .false.
+                accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                if (accept_subsample) then
+                    not_optimal = .false.
+                else
+                    mmm = mmm * 2.0d0
+                    not_new_sl_sh = .true.
+                end if
             end if
 
         end if  ! rd == 2 or rd > 2
@@ -1783,9 +1892,47 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
 contains
 
+    logical function certify_llqr_candidate(H_idx, r_vec, A_mat, m_loc, nvar_loc, res_tol_loc)
+        implicit none
+        integer, intent(in) :: m_loc, nvar_loc
+        integer, intent(in) :: H_idx(nvar_loc+1)
+        double precision, intent(in) :: r_vec(m_loc), A_mat(m_loc, nvar_loc+1), res_tol_loc
+        integer :: i, j
+        double precision :: det2
+
+        certify_llqr_candidate = .true.
+        do i = 1, nvar_loc + 1
+            if (H_idx(i) < 1 .or. H_idx(i) > m_loc) then
+                certify_llqr_candidate = .false.
+                return
+            end if
+            do j = i + 1, nvar_loc + 1
+                if (H_idx(i) == H_idx(j)) then
+                    certify_llqr_candidate = .false.
+                    return
+                end if
+            end do
+        end do
+
+        if (nvar_loc == 1) then
+            det2 = A_mat(H_idx(1), 1) * A_mat(H_idx(2), 2) - A_mat(H_idx(1), 2) * A_mat(H_idx(2), 1)
+            if (abs(det2) <= 1.0d-10) then
+                certify_llqr_candidate = .false.
+                return
+            end if
+        end if
+
+        do i = 1, nvar_loc + 1
+            if (abs(r_vec(H_idx(i))) > res_tol_loc) then
+                certify_llqr_candidate = .false.
+                return
+            end if
+        end do
+    end function certify_llqr_candidate
+
     ! PPRO-specific simplex algorithm (matches R's llqr_tau_seq_ppro lines 731-831)
     subroutine run_simplex_ppro(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, ldgx, mv, nvr, &
-                                tv, tl, mxit, bld, iters)
+                                tv, tl, mxit, bld, iters, no_pivot)
         implicit none
         integer, intent(in) :: ldgx, mv, nvr, mxit
         double precision, intent(inout) :: gx(ldgx, nvr+1), bv(mv+1)
@@ -1795,6 +1942,7 @@ contains
         double precision, intent(in) :: wv(mv), tv, tl
         logical, intent(in) :: bld
         integer, intent(out) :: iters
+        logical, intent(out) :: no_pivot
 
         ! Local variables
         double precision :: yyv(mv+1), eev(mv+1), k_valsv(mv+1)
@@ -1803,6 +1951,7 @@ contains
         double precision :: rrlv, min_kv, pivot_val
 
         iters = 0
+        no_pivot = .false.
 
 
         do while (iters < mxit)
@@ -1915,6 +2064,7 @@ contains
             end do
 
             if (kk == 0) then
+                no_pivot = .true.
                 exit
             end if
 

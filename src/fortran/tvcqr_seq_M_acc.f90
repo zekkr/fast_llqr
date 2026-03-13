@@ -100,6 +100,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     logical :: valid_H
     double precision :: temp_vec1(2*(nvar+1))
     integer :: ii, kk
+    logical :: force_full_sample, accept_subsample
+    integer :: empty_pivot_count, max_empty_pivot_retries
+    double precision :: res_tol
 
     
     integer :: n_hbar_rows        ! For the critical lambda/Pxhbarxhinv dimension
@@ -134,6 +137,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     
     ! Convert integer to logical for bland
     bland = (bland_int /= 0)
+    max_empty_pivot_retries = 3
+    res_tol = 1.0d-8
     
     ! Allocate the big arrays
     allocate(A(m, 2*(nvar+1)))
@@ -550,6 +555,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         debug_active = .false.
         not_optimal = .true.
         not_new_sl_sh = .true.
+        force_full_sample = .false.
+        empty_pivot_count = 0
         
 
 
@@ -610,25 +617,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             total_preprocessing_loops = total_preprocessing_loops + 1
             ! Add safety valve to prevent infinite preprocessing
             if (preprocessing_attempts > max(10, 2*(nvar+1))) then
-
-
-
-                write(6, *) 'WARNING: Too many preprocessing attempts at eva_t=', eva_t
-                write(6, *) 'Using previous time estimate as fallback'
-
-
-                ! Use continuity of time-varying coefficients
-                if (eva_t > 1) then
-                    ! The local linear model assumes beta(t) = beta_0 + beta_1 * t
-                    ! So we can extrapolate from the previous time point
-                    do j = 1, nvar+1
-                        estimate(j) = estimate(j)  ! Keep previous beta_0
-                        estimate(nvar+1+j) = estimate(nvar+1+j)  ! Keep previous beta_1
-                    end do
-                end if
-                
-                not_optimal = .false.
-                exit
+                force_full_sample = .true.
+                not_new_sl_sh = .true.
             end if
             ! Get residuals from previous time
             do i = 1, m
@@ -661,12 +651,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     abs_r(i) = abs(r(i))
                 end do
                 ! Fix 4: Scale threshold to residual magnitude (KEEP THIS!)
-                residual_scale = sum(abs_r(1:m)) / dble(m)!median_value(abs_r, m)
+                residual_scale = median_value(abs_r, m)
                 M_threshold = max(Mm_factor * mmm_thresh * log(log(dble(m))), 0.1d0 * residual_scale)
 
                 
                 ! NEW: Ensure minimum subsample size
-                min_subsample_size = max(3 * 2*(nvar+1), 100)
+                min_subsample_size = max(5 * (nvar + 1), ceiling(0.2d0 * dble(m)))
 
                 ! Count potential observations in S
                 n_potential_S = 0
@@ -705,6 +695,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             
             ! Count observations in each partition
+            if (force_full_sample) then
+                sl = .false.
+                sh = .false.
+            end if
             n_sl = 0
             n_sh = 0
             ms = 0
@@ -725,45 +719,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ! After counting ms (uncertain observations)
             if (ms < 2*(nvar+1)) then
                 write(6, *) 'WARNING: Only', ms, 'uncertain observations at eva_t=', eva_t
-                ! First, try increasing the threshold to get more observations
-                if (preprocessing_attempts < 3) then
-                    write(6, *) 'Threshold too restrictive. Doubling threshold and retrying.'
-                    mmm_thresh = 2.0d0 * mmm_thresh
-                    not_new_sl_sh = .true.
-                    cycle  ! This will restart the preprocessing loop with larger threshold
+                mmm_thresh = 2.0d0 * mmm_thresh
+                not_new_sl_sh = .true.
+                if (preprocessing_attempts >= max_empty_pivot_retries) then
+                    force_full_sample = .true.
                 end if
-
-                ! If we've already tried multiple times, then try your existing approach
-                write(6, *) 'Multiple threshold adjustments failed. Trying regularization.'
-
-                
-                ! For severely underdetermined problems, use regularization
-                if (ms < 2*(nvar+1)) then
-                    write(6, *) 'Severely underdetermined: using regularized solution'
-                    
-                    ! The safest approach is to use the H observations
-                    ! which should give a reasonable solution
-                    ! But we need to ensure H observations are valid
-                    
-                    ! Check if we have valid H observations
-                    valid_H = .true.
-                    do i = 1, 2*(nvar+1)
-                        if (H_indices(i) <= 0 .or. H_indices(i) > ms) then
-                            valid_H = .false.
-                            exit
-                        end if
-                    end do
-                    
-                    if (valid_H .and. eva_t > 2) then
-                        ! Use the H observation solution
-                        ! (Your existing code for this case)
-                    else
-                        ! Fall back to continuity-based estimate
-                        ! Use previous time's estimate
-                        not_optimal = .false.
-                        cycle
-                    end if
-                end if
+                cycle
             end if
 
 
@@ -2255,10 +2216,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     
 
      
+                    empty_pivot_count = empty_pivot_count + 1
                     mmm_thresh = 2.0d0 * mmm_thresh
-   
-                    
                     not_new_sl_sh = .true.
+                    if (empty_pivot_count >= max_empty_pivot_retries) then
+                        force_full_sample = .true.
+                    end if
 
                     unbounded_detected = .true.  ! SET THE FLAG
                     ! Exit the simplex loop to restart preprocessing
@@ -2330,9 +2293,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     write(6, *) '  Number of positive yy:', count(yy(1:ms) > tol)
                     write(6, *) '  Number of non-free vars:', count(.not. freevarrow(1:ms))
                     write(6, *) '  Min yy:', minval(yy(1:ms)), 'Max yy:', maxval(yy(1:ms))
-                    
-                    ! Force termination with current solution
-                    iter = maxit
+                    empty_pivot_count = empty_pivot_count + 1
+                    mmm_thresh = 2.0d0 * mmm_thresh
+                    not_new_sl_sh = .true.
+                    if (empty_pivot_count >= max_empty_pivot_retries) then
+                        force_full_sample = .true.
+                    end if
+                    unbounded_detected = .true.
                     exit
                 end if
                 
@@ -2351,12 +2318,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     write(6, *) 'ERROR: No leaving variable found (k=0) at eva_t=', eva_t, ', iter=', iter
                     write(6, *) 'min_k=', min_k
                     write(6, *) 'This means no feasible pivot exists'
-                    
-                    ! Force exit with current solution
-                    do i = 1, 2*(nvar+1)
-                        estimate(i) = bs(i)
-                    end do
-                    iter = maxit
+                    empty_pivot_count = empty_pivot_count + 1
+                    mmm_thresh = 2.0d0 * mmm_thresh
+                    not_new_sl_sh = .true.
+                    if (empty_pivot_count >= max_empty_pivot_retries) then
+                        force_full_sample = .true.
+                    end if
+                    unbounded_detected = .true.
                     exit
                 end if
 
@@ -2523,13 +2491,14 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             if (iter == maxit) then
                 write(6, *) 'WARNING: Max iterations reached at eva_t =', eva_t
-                write(6, *) 'Simplex failed to converge. Using fallback strategy.'
-                
-                        estimate(nvar+1+j) = estimate(nvar+1+j)  !
-
-                ! Force exit from preprocessing loop
-                not_optimal = .false.
-                
+                write(6, *) 'Simplex failed to converge. Increasing threshold / full-sample fallback.'
+                empty_pivot_count = empty_pivot_count + 1
+                mmm_thresh = 2.0d0 * mmm_thresh
+                not_new_sl_sh = .true.
+                if (empty_pivot_count >= max_empty_pivot_retries) then
+                    force_full_sample = .true.
+                end if
+                cycle
             else
                 ! Normal case - simplex converged
                 do i = 1, 2*(nvar+1)
@@ -2615,6 +2584,20 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             else
                 ! No bad signs - we've reached optimality
+                do i = 1, 2*(nvar+1)
+                    j = r1(i) - 2 - 2*nvar
+                    if (j > 0 .and. j <= ms_org) then
+                        H_indices(i) = idx_not_jl_or_jh(j)
+                    else
+                        H_indices(i) = 0
+                    end if
+                end do
+                accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, 2*(nvar+1), res_tol)
+                if (.not. accept_subsample) then
+                    mmm_thresh = 2.0d0 * mmm_thresh
+                    not_new_sl_sh = .true.
+                    cycle
+                end if
                 not_optimal = .false.
                 
 
@@ -2624,16 +2607,14 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 ! Extract H for next iteration
                 do i = 1, 2*(nvar+1)
-                    j = r1(i) - 2 - 2*nvar
-                    if (j > 0 .and. j <= ms_org) then
-                        H_seq(eva_t, i) = idx_not_jl_or_jh(j)
+                    if (H_indices(i) > 0) then
+                        H_seq(eva_t, i) = H_indices(i)
                     else
                         ! This matches R's behavior - r1 should always give valid indices
                         ! If not, there's a bug in the simplex algorithm
-                        write(6, *) 'ERROR: Invalid H index at eva_t=', eva_t, ', i=', i, ', j=', j
+                        write(6, *) 'ERROR: Invalid certified H index at eva_t=', eva_t, ', i=', i
                         write(6, *) 'r1(i)=', r1(i), ', ms_org=', ms_org
-                        ! Use previous value as safety fallback
-                        H_seq(eva_t, i) = H_seq(eva_t-1, i)
+                        H_seq(eva_t, i) = 0
                     end if
 
 
@@ -2793,6 +2774,45 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     deallocate(bs)
 
 contains
+
+    logical function certify_tvcqr_candidate(H_idx, r_vec, A_mat, m_loc, p, res_tol_loc)
+        implicit none
+        integer, intent(in) :: m_loc, p
+        integer, intent(in) :: H_idx(p)
+        double precision, intent(in) :: r_vec(m_loc), A_mat(m_loc, p), res_tol_loc
+        integer :: i, j, ierr_local
+        double precision :: AH(p, p), AH_inv(p, p)
+
+        certify_tvcqr_candidate = .true.
+
+        do i = 1, p
+            if (H_idx(i) < 1 .or. H_idx(i) > m_loc) then
+                certify_tvcqr_candidate = .false.
+                return
+            end if
+            do j = i + 1, p
+                if (H_idx(i) == H_idx(j)) then
+                    certify_tvcqr_candidate = .false.
+                    return
+                end if
+            end do
+            if (abs(r_vec(H_idx(i))) > res_tol_loc) then
+                certify_tvcqr_candidate = .false.
+                return
+            end if
+        end do
+
+        do i = 1, p
+            do j = 1, p
+                AH(i, j) = A_mat(H_idx(i), j)
+            end do
+        end do
+        call matrix_inverse_2p(AH, AH_inv, p, ierr_local)
+        if (ierr_local /= 0) then
+            certify_tvcqr_candidate = .false.
+            return
+        end if
+    end function certify_tvcqr_candidate
 
     ! Helper subroutine to save algorithm state
     subroutine save_checkpoint(eva_t, filename_prefix)
