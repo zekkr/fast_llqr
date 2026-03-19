@@ -237,7 +237,13 @@ if (ncores > 1 && length(rep_ids) > 1) {
     library(doParallel)
     library(foreach)
   })
-  cl <- makeCluster(ncores)
+  cluster_type <- if (.Platform$OS.type == "unix") "FORK" else "PSOCK"
+  cat(sprintf("parallel cluster type: %s\n", cluster_type))
+  cl <- if (.Platform$OS.type == "unix") {
+    parallel::makeForkCluster(ncores)
+  } else {
+    parallel::makeCluster(ncores)
+  }
   on.exit(stopCluster(cl), add = TRUE)
   registerDoParallel(cl)
   
