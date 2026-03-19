@@ -1235,7 +1235,12 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      d_ll_est = double(rounds),
                      it_num = integer(rounds),
                      residual_est = matrix(0.0, nrow = rounds, ncol = m),
-                     H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1))
+                     H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1),
+                     ierr = integer(1))
+
+  if (!identical(as.integer(result$ierr), 0L)) {
+    stop("llqr_ppro_fortran failed: full-sample certification failed.")
+  }
   
   # Return results matching R's output format
   return(list(

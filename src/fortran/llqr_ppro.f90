@@ -121,7 +121,7 @@ end function max_array
 ! Main PPRO subroutine
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                              Mm_factor, case_int, bland_int, ll_est, d_ll_est, it_num, &
-                             residual_est, H_mat)
+                             residual_est, H_mat, ierr)
 
     implicit none
 
@@ -136,6 +136,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer, intent(out) :: it_num(rounds)
     double precision, intent(out) :: residual_est(rounds, m)
     integer, intent(out) :: H_mat(rounds, nvar+1)
+    integer, intent(out) :: ierr
 
     ! Local variables for full problem (round 1)
     double precision :: A(m, nvar+1)     ! Design matrix [1, x]
@@ -241,6 +242,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     bland = (bland_int /= 0)
     res_tol = 1.0d-8
     max_empty_pivot_retries = 3
+    ierr = 0
 
     ! Set default bandwidth
     if (h <= 0.0d0) then
@@ -1105,6 +1107,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     if (accept_subsample) then
                         not_optimal = .false.
                     else
+                        if ((.not. any(sl)) .and. (.not. any(sh))) then
+                            ierr = 1
+                            write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
+                            return
+                        end if
                         mmm = mmm * 2.0d0
                         not_new_sl_sh = .true.
                     end if
@@ -1179,6 +1186,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 if (accept_subsample) then
                     not_optimal = .false.
                 else
+                    if ((.not. any(sl)) .and. (.not. any(sh))) then
+                        ierr = 1
+                        write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
+                        return
+                    end if
                     mmm = mmm * 2.0d0
                     not_new_sl_sh = .true.
                 end if
@@ -1822,6 +1834,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     if (accept_subsample) then
                         not_optimal = .false.
                     else
+                        if ((.not. any(sl)) .and. (.not. any(sh))) then
+                            ierr = 1
+                            write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
+                            return
+                        end if
                         mmm = mmm * 2.0d0
                         not_new_sl_sh = .true.
                     end if
@@ -1862,6 +1879,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 if (accept_subsample) then
                     not_optimal = .false.
                 else
+                    if ((.not. any(sl)) .and. (.not. any(sh))) then
+                        ierr = 1
+                        write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
+                        return
+                    end if
                     mmm = mmm * 2.0d0
                     not_new_sl_sh = .true.
                 end if
