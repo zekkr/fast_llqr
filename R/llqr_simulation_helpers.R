@@ -72,6 +72,8 @@ run_llqr_baseline_with_retry <- function(x, y, config) {
 
 create_llqr_methods <- function(Mm.factor_vec) {
   methods <- list()
+  include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO_FORTRAN", unset = "0")) %in%
+    c("1", "true", "t", "yes", "y")
   
   # Methods without Mm.factor parameter
   methods$llqr <- function(x, y, config) {
@@ -122,18 +124,20 @@ create_llqr_methods <- function(Mm.factor_vec) {
       }
     })
     
-    # llqr_seq_ppro_fortran with different Mm.factor values
-    method_name_fortran <- sprintf("llqr_seq_ppro_fortran_%d", i)
-    methods[[method_name_fortran]] <- local({
-      Mm_factor_local <- Mm_val
-      function(x, y, config) {
-        llqr_seq_ppro_fortran_wrapper(x = x, y = y, z = config$z, 
-                                      tau = config$tau, h = config$h,
-                                      Mm.factor = Mm_factor_local,
-                                      tol = config$tol, maxit = config$maxit, 
-                                      bland = config$bland)
-      }
-    })
+    # llqr_seq_ppro_fortran is kept opt-in only until the Fortran path is stable.
+    if (include_ppro_fortran) {
+      method_name_fortran <- sprintf("llqr_seq_ppro_fortran_%d", i)
+      methods[[method_name_fortran]] <- local({
+        Mm_factor_local <- Mm_val
+        function(x, y, config) {
+          llqr_seq_ppro_fortran_wrapper(x = x, y = y, z = config$z, 
+                                        tau = config$tau, h = config$h,
+                                        Mm.factor = Mm_factor_local,
+                                        tol = config$tol, maxit = config$maxit, 
+                                        bland = config$bland)
+        }
+      })
+    }
   }
   
   return(methods)
