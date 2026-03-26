@@ -9,6 +9,8 @@
 #' @export
 create_tvcqr_methods <- function(Mm.factor_vec) {
   methods <- list()
+  include_ppro <- tolower(Sys.getenv("FASTQR_INCLUDE_TVCQR_PPRO", unset = "0")) %in%
+    c("1", "true", "t", "yes", "y")
   
   # Methods without Mm.factor parameter
   methods$tvc_rq <- function(x, y, config) {
@@ -31,15 +33,17 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
   for (i in seq_along(Mm.factor_vec)) {
     Mm_val <- Mm.factor_vec[i]
     
-    # tvc_rq_ppro with different Mm.factor values (non-sequential preprocessing)
-    method_name_ppro <- sprintf("tvc_rq_ppro_%d", i)
-    methods[[method_name_ppro]] <- local({
-      Mm_factor_local <- Mm_val
-      function(x, y, config) {
-        tvc_rq_ppro(x = x, y = y, tau = config$tau, h = config$h, 
-                    Mm.factor = Mm_factor_local, pmethod = NULL)
-      }
-    })
+    # tvc_rq_ppro is kept opt-in only until the R ppro path is stable.
+    if (include_ppro) {
+      method_name_ppro <- sprintf("tvc_rq_ppro_%d", i)
+      methods[[method_name_ppro]] <- local({
+        Mm_factor_local <- Mm_val
+        function(x, y, config) {
+          tvc_rq_ppro(x = x, y = y, tau = config$tau, h = config$h, 
+                      Mm.factor = Mm_factor_local, pmethod = NULL)
+        }
+      })
+    }
     
     # tvcqr_seq_ppro with different Mm.factor values
     method_name <- sprintf("tvcqr_seq_ppro_%d", i)
