@@ -74,7 +74,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
   methods <- list()
   include_ppro <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO", unset = "0")) %in%
     c("1", "true", "t", "yes", "y")
-  include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO_FORTRAN", unset = "0")) %in%
+  include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO_FORTRAN", unset = "1")) %in%
     c("1", "true", "t", "yes", "y")
   
   # Methods without Mm.factor parameter

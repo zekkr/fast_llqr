@@ -7,7 +7,7 @@
 subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, &
                                    theta_ll_est, it_num, residual_est, &
-                                   M_out, n_sub, H_seq)
+                                   M_out, n_sub, H_seq, ierr)
     
     implicit none
     
@@ -24,6 +24,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision, intent(out) :: M_out
     integer, intent(out) :: n_sub(m)
     integer, intent(out) :: H_seq(m, 2*(nvar+1))
+    integer, intent(out) :: ierr
     
     ! Local variables
     double precision :: x_norms(m), mm_thresh, mmm_thresh, M_threshold
@@ -76,7 +77,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision :: pivot_row(2*(nvar+1))
     
     integer :: i, j, k, t, eva_t, iter
-    integer :: ierr
     integer :: t_rr, tsep
     double precision :: rrl, min_k, temp_sum
     logical :: bland
@@ -117,7 +117,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision, allocatable :: bs(:)            ! Size: m+3
     logical :: unbounded_detected
     logical :: simplex_converged
-
     integer :: total_simplex_iterations
     integer :: total_preprocessing_loops
     integer :: max_iter_at_any_t
@@ -126,6 +125,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
  
 
+    ierr = 0
     total_simplex_iterations = 0
     total_preprocessing_loops = 0
     max_iter_at_any_t = 0
@@ -2594,6 +2594,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 end do
                 accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, 2*(nvar+1), res_tol)
                 if (.not. accept_subsample) then
+                    if ((.not. any(sl)) .and. (.not. any(sh)) .and. (ms >= m)) then
+                        ierr = 1
+                        return
+                    end if
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     cycle

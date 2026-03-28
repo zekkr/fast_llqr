@@ -639,6 +639,36 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   # we use a big (n+2) rows gammax to store the gammaxs
   gammaxs.temp <- matrix(NA, nrow = m + 2, ncol = 2*(nvar + 1))
   bs.temp <- rep(NA, m + 2)
+
+  finish_with_seq_fallback <- function(t_start, current_M) {
+    seq_fit <- tvcqr_seq(
+      x = x,
+      y = y,
+      tau = tau,
+      h = h,
+      h.factor = h.factor,
+      tol = tol,
+      maxit = maxit,
+      bland = bland
+    )
+
+    theta_ll_est[t_start:m, ] <<- seq_fit$theta_ll_est[t_start:m, , drop = FALSE]
+    it_num[t_start:m] <<- NA_real_
+    if (store_residual) {
+      residual_est[t_start:m, ] <<- seq_fit$residual_est[t_start:m, , drop = FALSE]
+    }
+    n_sub[t_start:m] <<- m
+    H_seq[t_start:m, ] <<- NA_real_
+
+    return(list(
+      theta_ll_est = theta_ll_est,
+      it_num = it_num,
+      residual_est = residual_est,
+      M = current_M,
+      n_sub = n_sub,
+      H_seq = H_seq
+    ))
+  }
   
   for (eva_t in 2:m){
     # print(eva_t)
@@ -1009,6 +1039,9 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
           not_new_sl_sh <- FALSE
           #cat("Some fixups: fixing ", eva_t, "\n")
         } else {
+          if ((ms >= m) && !any(sl) && !any(sh) && !force_full_sample) {
+            return(finish_with_seq_fallback(eva_t, M))
+          }
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
         }
@@ -1196,8 +1229,24 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      M_out = as.double(M_out),
                      n_sub = as.integer(n_sub),
                      H_seq = as.integer(H_seq),
+                     ierr = as.integer(0),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
+
+  if (!identical(as.integer(result$ierr), 0L)) {
+    fallback <- tvcqr_seq_fortran_wrapper(
+      x = x,
+      y = y,
+      tau = tau,
+      h = if (h_value > 0) h_value else NULL,
+      tol = tol,
+      maxit = maxit,
+      bland = bland
+    )
+    fallback$M <- NA_real_
+    fallback$n_sub <- rep(m, m)
+    return(fallback)
+  }
   
   # Reshape the flattened arrays back to matrices
   # Fortran stores matrices in column-major order, same as R

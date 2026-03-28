@@ -697,6 +697,44 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   # we use a big (n+2) rows gammax to store the gammaxs
   gammaxs.temp <- matrix(NA, nrow = m + 2, ncol = nvar + 1)
   bs.temp <- rep(NA, m + 2)
+
+  finish_with_seq_fallback <- function(rd_start, current_M) {
+    seq_fit <- llqr_seq(
+      x = x,
+      y = y,
+      tau = tau,
+      z = z[rd_start:rounds, , drop = FALSE],
+      h = h,
+      tol = tol,
+      maxit = maxit,
+      track_order = FALSE
+    )
+
+    ll_est[rd_start:rounds] <<- seq_fit$ll_est
+    d_ll_est[rd_start:rounds] <<- seq_fit$d_ll_est
+    it_num[rd_start:rounds] <<- NA_real_
+    if (store_residual) {
+      residual_est[rd_start:rounds, ] <<- seq_fit$residual_est
+    }
+    n_sub[rd_start:rounds] <<- m
+    H_seq[rd_start:rounds, ] <<- NA_real_
+
+    if (track_order) {
+      ll_est <<- ll_est[order(original_order)]
+      d_ll_est <<- d_ll_est[order(original_order)]
+    }
+
+    return(list(
+      ll_est = ll_est,
+      d_ll_est = d_ll_est,
+      it_num = it_num,
+      residual_est = residual_est,
+      h = h,
+      M = current_M,
+      n_sub = n_sub,
+      H_seq = H_seq
+    ))
+  }
   
   for (rd in 2:rounds){
     # print(rd)
@@ -1053,6 +1091,12 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
           not_new_sl_sh <- FALSE
           # cat("Some fixups: fixing ", rd, "\n")
         } else {
+          # Once screening has already collapsed to the full sample, repeated
+          # invalid_H retries add no new information. Fall back to the stable
+          # sequential solver for the remaining evaluation points instead.
+          if ((ms >= m) && !any(sl) && !any(sh) && !force_full_sample) {
+            return(finish_with_seq_fallback(rd, M))
+          }
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
         }
@@ -1239,7 +1283,19 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      ierr = integer(1))
 
   if (!identical(as.integer(result$ierr), 0L)) {
-    stop("llqr_ppro_fortran failed: full-sample certification failed.")
+    fallback <- llqr_seq_fortran_wrapper(
+      x = x,
+      y = y,
+      tau = tau,
+      z = z,
+      h = h,
+      tol = tol,
+      maxit = maxit,
+      bland = bland
+    )
+    fallback$M <- NA_real_
+    fallback$n_sub <- rep(length(y), length(fallback$ll_est))
+    return(fallback)
   }
   
   # Return results matching R's output format
