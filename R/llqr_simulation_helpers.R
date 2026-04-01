@@ -137,6 +137,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
           llqr_seq_ppro_fortran_wrapper(x = x, y = y, z = config$z, 
                                         tau = config$tau, h = config$h,
                                         Mm.factor = Mm_factor_local,
+                                        case = config$case,
                                         tol = config$tol, maxit = config$maxit, 
                                         bland = config$bland)
         }
