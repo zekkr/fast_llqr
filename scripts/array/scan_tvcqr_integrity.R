@@ -34,14 +34,14 @@ normalize_msg <- function(msg) {
   trimws(msg)
 }
 
-base_dir <- Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
+base_dir <- Sys.getenv("FASTQR_TVCQR_BASE_DIR", unset = "data/tvcqr_simu_results")
 partial_root <- file.path(base_dir, ".array_tmp")
-cases <- parse_int_vec("FASTQR_CASES", c(1L, 2L))
+cases <- parse_int_vec("FASTQR_CASES", c(1L))
 ns <- parse_int_vec("FASTQR_NS", c(200L, 500L, 1000L, 2000L, 5000L))
 taus <- parse_num_vec("FASTQR_TAUS", c(0.2, 0.5, 0.8))
 num_rep <- as_int("FASTQR_NUM_REP", 1000L)
 scan_cores <- as_int("FASTQR_SCAN_CORES", max(1L, min(8L, detectCores(logical = TRUE))))
-out_prefix <- Sys.getenv("FASTQR_LLQR_SCAN_PREFIX", unset = "results/table/llqr_current")
+out_prefix <- Sys.getenv("FASTQR_TVCQR_SCAN_PREFIX", unset = "results/table/tvcqr_current")
 rep_id_dir <- sprintf("%s_rep_ids", out_prefix)
 
 scan_one_config <- function(case_id, tau, n) {
@@ -104,15 +104,16 @@ scan_one_config <- function(case_id, tau, n) {
 
   failed_ids <- sort(unique(vapply(file_results, function(x) if (isTRUE(x$failed)) x$rep_id else NA_integer_, integer(1L))))
   failed_ids <- failed_ids[!is.na(failed_ids)]
-  failed_msgs <- vapply(Filter(function(x) isTRUE(x$failed), file_results), function(x) x$msg, character(1L))
+  failed_entries <- Filter(function(x) isTRUE(x$failed), file_results)
+  failed_msgs <- vapply(failed_entries, function(x) x$msg, character(1L))
   rerun_ids <- sort(unique(c(missing, failed_ids)))
 
-  err_df <- if (length(failed_ids) > 0L) {
+  err_df <- if (length(failed_entries) > 0L) {
     data.frame(
       case = case_id,
       tau = tau,
       n = n,
-      rep_id = vapply(Filter(function(x) isTRUE(x$failed), file_results), function(x) x$rep_id, integer(1L)),
+      rep_id = vapply(failed_entries, function(x) x$rep_id, integer(1L)),
       error_msg = failed_msgs,
       stringsAsFactors = FALSE
     )
@@ -133,6 +134,8 @@ scan_one_config <- function(case_id, tau, n) {
     first_missing = if (length(missing)) paste(head(sort(missing), 20L), collapse = ",") else "",
     first_failed = if (length(failed_ids)) paste(head(failed_ids, 20L), collapse = ",") else "",
     first_failed_msg = if (length(failed_msgs)) failed_msgs[1L] else "",
+    n_rerun = length(rerun_ids),
+    rep_ids_file = "",
     stringsAsFactors = FALSE
   )
 
@@ -140,11 +143,7 @@ scan_one_config <- function(case_id, tau, n) {
     dir.create(rep_id_dir, recursive = TRUE, showWarnings = FALSE)
     rep_id_file <- file.path(rep_id_dir, sprintf("case%d_%s_n%d_rep%d.txt", case_id, tau_str, n, num_rep))
     writeLines(as.character(rerun_ids), rep_id_file)
-    summary_df$n_rerun <- length(rerun_ids)
     summary_df$rep_ids_file <- rep_id_file
-  } else {
-    summary_df$n_rerun <- 0L
-    summary_df$rep_ids_file <- ""
   }
 
   list(summary = summary_df, errors = err_df)
@@ -183,7 +182,7 @@ write.table(
   quote = FALSE
 )
 
-cat("=== LLQR integrity summary ===\n")
+cat("=== TVCQR integrity summary ===\n")
 print(summary_df, row.names = FALSE)
 cat("\n=== Problem configs ===\n")
 print(problem_df, row.names = FALSE)

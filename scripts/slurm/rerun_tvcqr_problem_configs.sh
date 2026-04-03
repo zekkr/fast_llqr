@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-/home/$USER/WORK/Erkang/fast_llqr}"
 PARTITION="${PARTITION:-cnall}"
 ACCOUNT="${ACCOUNT:-users}"
-CHECK_PREFIX="${FASTQR_LLQR_SCAN_PREFIX:-results/table/llqr_rerun}"
+CHECK_PREFIX="${FASTQR_TVCQR_SCAN_PREFIX:-results/table/tvcqr_rerun}"
 SCAN_CORES="${FASTQR_SCAN_CORES:-8}"
 export FASTQR_NUM_REP="${FASTQR_NUM_REP:-1000}"
 
@@ -16,9 +16,9 @@ export PATH=/apps/soft/R/R-4.3.1/bin:$PATH
 export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64:$LD_LIBRARY_PATH
 export R_LIBS_USER="/home/$USER/R/x86_64-pc-linux-gnu-library/4.3"
 
-export FASTQR_LLQR_SCAN_PREFIX="$CHECK_PREFIX"
+export FASTQR_TVCQR_SCAN_PREFIX="$CHECK_PREFIX"
 export FASTQR_SCAN_CORES="$SCAN_CORES"
-Rscript scripts/array/scan_llqr_integrity.R
+Rscript scripts/array/scan_tvcqr_integrity.R
 
 PROBLEM_TSV="${CHECK_PREFIX}_problem_configs.tsv"
 if [[ ! -f "$PROBLEM_TSV" ]]; then
@@ -26,7 +26,7 @@ if [[ ! -f "$PROBLEM_TSV" ]]; then
   exit 1
 fi
 
-squeue -h -u "$USER" -o "%i %j %T %R" | awk '$2 ~ /^llqr_/ && $3 == "PENDING" && $4 ~ /DependencyNeverSatisfied/ {print $1}' | xargs -r scancel
+squeue -h -u "$USER" -o "%i %j %T %R" | awk '$2 ~ /^tvcqr_/ && $3 == "PENDING" && $4 ~ /DependencyNeverSatisfied/ {print $1}' | xargs -r scancel
 
 tail -n +2 "$PROBLEM_TSV" | while IFS=$'\t' read -r case_id tau n n_missing n_failed missing_rate failed_rate n_rerun rep_ids_file; do
   [[ -z "$case_id" ]] && continue
@@ -40,12 +40,15 @@ tail -n +2 "$PROBLEM_TSV" | while IFS=$'\t' read -r case_id tau n n_missing n_fa
   export CPUS_PER_TASK="${FASTQR_RERUN_CPUS_PER_TASK:-1}"
   export FASTQR_CHUNK_SIZE="${FASTQR_RERUN_CHUNK_SIZE:-1}"
   export FASTQR_MM_FACTOR="1e-3,1e-4"
-  export FASTQR_MAX_ATTEMPTS_PER_REP=1
-  export FASTQR_RETRY_STRIDE=1000000
-  export FASTQR_MAX_SECONDS_PER_REP=7200
-  export FASTQR_INCLUDE_LLQR_PPRO=0
-  export FASTQR_INCLUDE_LLQR_PPRO_FORTRAN=1
-  export FASTQR_LLQR_CHECK_OUT_DIR="results/table"
+  export FASTQR_H_FACTOR="${FASTQR_H_FACTOR:-1}"
+  export FASTQR_TOL="${FASTQR_TOL:-1e-14}"
+  export FASTQR_MAXIT="${FASTQR_MAXIT:-1000000}"
+  export FASTQR_BLAND="${FASTQR_BLAND:-0}"
+  export FASTQR_EPS="${FASTQR_EPS:-1e-6}"
+  export FASTQR_CPP_HELPER="${FASTQR_CPP_HELPER:-0}"
+  export FASTQR_MAX_SECONDS_PER_REP="${FASTQR_MAX_SECONDS_PER_REP:-3600}"
+  export FASTQR_INCLUDE_TVCQR_PPRO=0
+  export FASTQR_TVCQR_CHECK_OUT_DIR="results/table"
 
   if [ "$n" -le 1000 ]; then
     export WALLTIME=04:00:00
@@ -58,10 +61,10 @@ tail -n +2 "$PROBLEM_TSV" | while IFS=$'\t' read -r case_id tau n n_missing n_fa
   unset FASTQR_REP_ID_LIST
   export FASTQR_REP_ID_FILE="$rep_ids_file"
 
-  echo "Resubmitting LLQR case=${case_id} tau=${tau} n=${n} with chunk=${FASTQR_CHUNK_SIZE} walltime=${WALLTIME} (missing=${n_missing}, failed=${n_failed}, rerun=${n_rerun})"
-  ./scripts/slurm/submit_llqr_rerun_array.sh
+  echo "Resubmitting TVCQR case=${case_id} tau=${tau} n=${n} with chunk=${FASTQR_CHUNK_SIZE} walltime=${WALLTIME} (missing=${n_missing}, failed=${n_failed}, rerun=${n_rerun})"
+  ./scripts/slurm/submit_tvcqr_rerun_array.sh
   sleep 2
 done
 
-echo "Submitted reruns for all problem LLQR configs listed in ${PROBLEM_TSV}."
+echo "Submitted reruns for all problem TVCQR configs listed in ${PROBLEM_TSV}."
 echo "Monitor with: squeue -u $USER"

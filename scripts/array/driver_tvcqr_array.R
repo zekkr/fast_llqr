@@ -37,6 +37,33 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+parse_rep_id_pool <- function(num_rep) {
+  rep_file <- Sys.getenv("FASTQR_REP_ID_FILE", unset = NA_character_)
+  rep_list <- Sys.getenv("FASTQR_REP_ID_LIST", unset = NA_character_)
+
+  tokens <- character()
+  if (!is.na(rep_file) && nzchar(rep_file)) {
+    if (!file.exists(rep_file)) {
+      stop(sprintf("FASTQR_REP_ID_FILE does not exist: %s", rep_file))
+    }
+    file_text <- paste(readLines(rep_file, warn = FALSE), collapse = ",")
+    tokens <- c(tokens, strsplit(file_text, "[,[:space:]]+", perl = TRUE)[[1]])
+  }
+  if (!is.na(rep_list) && nzchar(rep_list)) {
+    tokens <- c(tokens, strsplit(rep_list, "[,[:space:]]+", perl = TRUE)[[1]])
+  }
+  tokens <- tokens[nzchar(tokens)]
+  if (length(tokens) == 0L) {
+    return(NULL)
+  }
+
+  vals <- suppressWarnings(as.integer(tokens))
+  vals <- sort(unique(vals[!is.na(vals) & vals >= 1L & vals <= num_rep]))
+  if (length(vals) == 0L) {
+    stop("No valid rep_ids found in FASTQR_REP_ID_FILE / FASTQR_REP_ID_LIST.")
+  }
+  vals
+}
 require_pos_int <- function(x, name) {
   if (is.na(x) || !is.finite(x) || x < 1L) {
     stop(sprintf("%s must be a positive integer, got: %s", name, as.character(x)))
@@ -68,10 +95,21 @@ if (is.na(tau) || !is.finite(tau) || tau <= 0 || tau >= 1) {
   stop(sprintf("FASTQR_TAU must be in (0,1), got: %s", as.character(tau)))
 }
 
-rep_start <- (task_id - 1L) * chunk_size + 1L
-rep_end   <- min(task_id * chunk_size, num_rep)
-rep_ids   <- rep_start:rep_end
-rep_ids   <- rep_ids[rep_ids >= 1 & rep_ids <= num_rep]
+rep_id_pool <- parse_rep_id_pool(num_rep)
+if (is.null(rep_id_pool)) {
+  rep_start <- (task_id - 1L) * chunk_size + 1L
+  rep_end   <- min(task_id * chunk_size, num_rep)
+  rep_ids   <- rep_start:rep_end
+  rep_ids   <- rep_ids[rep_ids >= 1 & rep_ids <= num_rep]
+  sparse_mode <- FALSE
+  total_rep_targets <- num_rep
+} else {
+  rep_start <- (task_id - 1L) * chunk_size + 1L
+  rep_end   <- min(task_id * chunk_size, length(rep_id_pool))
+  rep_ids   <- if (rep_start <= rep_end) rep_id_pool[rep_start:rep_end] else integer()
+  sparse_mode <- TRUE
+  total_rep_targets <- length(rep_id_pool)
+}
 
 Mm.factor <- as_num_vec("FASTQR_MM_FACTOR", c(1e-3, 1e-4))
 h.factor  <- as_num("FASTQR_H_FACTOR", 1)
@@ -106,7 +144,12 @@ dir.create(partial_dir, recursive = TRUE, showWarnings = FALSE)
 cat("=== TVCQR ARRAY DRIVER ===\n")
 cat(sprintf("task_id=%d, ncores=%d, chunk_size=%d\n", task_id, ncores, chunk_size))
 cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
-cat(sprintf("rep range: %d-%d (len=%d)\n", rep_start, rep_end, length(rep_ids)))
+if (sparse_mode) {
+  cat(sprintf("sparse rep positions: %d-%d of %d (len=%d)\n", rep_start, rep_end, total_rep_targets, length(rep_ids)))
+  cat(sprintf("rep ids: %s\n", paste(utils::head(rep_ids, 20L), collapse = ",")))
+} else {
+  cat(sprintf("rep range: %d-%d (len=%d)\n", rep_start, rep_end, length(rep_ids)))
+}
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("seed_base:", seed_base, "\n\n")
