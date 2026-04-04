@@ -69,6 +69,11 @@ require_pos_int <- function(x, name) {
     stop(sprintf("%s must be a positive integer, got: %s", name, as.character(x)))
   }
 }
+require_nonneg_int <- function(x, name) {
+  if (is.na(x) || !is.finite(x) || x < 0L) {
+    stop(sprintf("%s must be a non-negative integer, got: %s", name, as.character(x)))
+  }
+}
 
 # ---- SLURM / config ----
 task_id  <- as_int("SLURM_ARRAY_TASK_ID", 1)
@@ -119,6 +124,10 @@ bland     <- as_bool("FASTQR_BLAND", FALSE)
 eps       <- as_num("FASTQR_EPS", 1e-6)
 cpp_helper<- as_bool("FASTQR_CPP_HELPER", FALSE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2025)
+J         <- as_int("FASTQR_J", 100)
+burn_in   <- as_int("FASTQR_BURN_IN", 500)
+require_nonneg_int(J, "FASTQR_J")
+require_nonneg_int(burn_in, "FASTQR_BURN_IN")
 
 config_base <- list(
   case = case,
@@ -133,8 +142,11 @@ config_base <- list(
   Mm.factor = Mm.factor,
   eps = eps,
   cpp_helper = cpp_helper,
-  seed_base = seed_base
+  seed_base = seed_base,
+  J = J,
+  burn_in = burn_in
 )
+config_base <- complete_tvcqr_sim_config(config_base)
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
 partial_dir <- file.path("data/tvcqr_simu_results", ".array_tmp",
@@ -143,7 +155,8 @@ dir.create(partial_dir, recursive = TRUE, showWarnings = FALSE)
 
 cat("=== TVCQR ARRAY DRIVER ===\n")
 cat(sprintf("task_id=%d, ncores=%d, chunk_size=%d\n", task_id, ncores, chunk_size))
-cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
+cat(sprintf("case=%d (%s), tau=%.2f, n=%d, num_rep=%d\n",
+            config_base$case, config_base$case_label, tau, n, num_rep))
 if (sparse_mode) {
   cat(sprintf("sparse rep positions: %d-%d of %d (len=%d)\n", rep_start, rep_end, total_rep_targets, length(rep_ids)))
   cat(sprintf("rep ids: %s\n", paste(utils::head(rep_ids, 20L), collapse = ",")))
@@ -153,6 +166,10 @@ if (sparse_mode) {
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("seed_base:", seed_base, "\n\n")
+if (config_base$case == 2L) {
+  cat("J:", config_base$J, "\n")
+  cat("burn_in:", config_base$burn_in, "\n\n")
+}
 cat("max_seconds_per_rep:", max_seconds_per_rep, "\n\n")
 
 if (length(rep_ids) == 0) {
@@ -188,8 +205,7 @@ run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec) {
 }
 
 run_one <- function(rep_id) {
-  # For deterministic data gen inside helper: generate_ts(..., seed = seed_base + rep_id)
-  # So we only need to pass config with seed_base and rep_id.
+  # The helper regenerates the same DGP from seed_base + rep_id, including Case 2 J/burn_in.
   rep_config <- config_base
   rep_config$num_rep <- 1
   rep_config$rep_id <- rep_id

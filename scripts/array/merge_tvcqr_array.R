@@ -44,6 +44,8 @@ bland     <- as_bool("FASTQR_BLAND", FALSE)
 eps       <- as_num("FASTQR_EPS", 1e-6)
 cpp_helper<- as_bool("FASTQR_CPP_HELPER", FALSE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2025)
+J         <- as_int("FASTQR_J", 100)
+burn_in   <- as_int("FASTQR_BURN_IN", 500)
 
 config <- list(
   case = case,
@@ -58,8 +60,11 @@ config <- list(
   Mm.factor = Mm.factor,
   eps = eps,
   cpp_helper = cpp_helper,
-  seed_base = seed_base
+  seed_base = seed_base,
+  J = J,
+  burn_in = burn_in
 )
+config <- complete_tvcqr_sim_config(config)
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
 partial_dir <- file.path("data/tvcqr_simu_results", ".array_tmp",
@@ -68,7 +73,12 @@ dir.create("data/tvcqr_simu_results", recursive = TRUE, showWarnings = FALSE)
 
 cat("=== TVCQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
-cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n\n", case, tau, n, num_rep))
+cat(sprintf("case=%d (%s), tau=%.2f, n=%d, num_rep=%d\n",
+            config$case, config$case_label, tau, n, num_rep))
+if (config$case == 2L) {
+  cat(sprintf("J=%d, burn_in=%d\n", config$J, config$burn_in))
+}
+cat("\n")
 
 # Determine method_names (create in the same way as simulation)
 methods <- create_tvcqr_methods(Mm.factor)
@@ -122,6 +132,8 @@ results <- list(
   method_names = method_names,
   Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, Mm.factor),
   timestamp = Sys.time(),
+  case_label = config$case_label,
+  case_key = config$case_key,
   simulation_type = "tvcqr"
 )
 

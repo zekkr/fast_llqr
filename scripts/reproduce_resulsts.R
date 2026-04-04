@@ -19,7 +19,9 @@ sim_config_tvcqr <- list(
   Mm.factor = c(1e-3, 1e-4),  # Multiple Mm factors to test
   eps = 1e-06,           # Epsilon for preprocessing
   cpp_helper = FALSE,    # Use C++ helper functions
-  seed_base = 2025      # Base seed for reproducibility
+  seed_base = 2025,      # Base seed for reproducibility
+  J = 100,               # Truncation level for TVCQR Case 2
+  burn_in = 500          # Burn-in for TVCQR Case 2
 )
 
 # Run TVCQR Simulation
@@ -67,4 +69,3 @@ print_llqr_simulation_summary(results_llqr)
 
 # Save LLQR Results
 save_llqr_simulation_results(results_llqr)
-

@@ -30,6 +30,7 @@ case_id <- as_int("FASTQR_CASE", 1L)
 tau <- as_num("FASTQR_TAU", 0.5)
 n <- as_int("FASTQR_N", 200L)
 num_rep <- as_int("FASTQR_NUM_REP", 1000L)
+case_label <- resolve_tvcqr_case(case_id)$case_label
 base_dir <- Sys.getenv("FASTQR_TVCQR_BASE_DIR", unset = "data/tvcqr_simu_results")
 out_dir <- Sys.getenv("FASTQR_TVCQR_CHECK_OUT_DIR", unset = "results/table")
 
@@ -63,6 +64,7 @@ for (f in fs) {
 failed <- sort(unique(failed))
 summary_df <- data.frame(
   case = case_id,
+  case_label = case_label,
   tau = tau,
   n = n,
   final_exists = file.exists(final_file),

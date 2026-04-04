@@ -1,46 +1,162 @@
 # ============================================================================ #
 # Generates simulation data for time-varying coefficient quantile regression
 # ============================================================================ #
-generate_ts <- function(n, case = 1, seed = NULL) {
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-  
-  # Generate design matrix
-  x <- matrix(rnorm(n * 3), n, 3)
-  
-  # Generate error term
-  error <- rnorm(n, mean = 0, sd = 1)
-  
-  # Time index
-  time_index <- (1:n) / n
-  
-  # Define time-varying coefficients based on case
-  if (case == 1) {
-    theta0 <- sin(2 * pi * time_index)
-    theta1 <- rep(0.5, n) 
-    theta2 <- 2 * log(1 + 2 * time_index)
-    theta3 <- exp(-(time_index - 0.5)^2)
-  } else if (case == 2) {
-    # Add other cases as needed
-    theta0 <- cos(2 * pi * time_index)
-    theta1 <- time_index
-    theta2 <- sqrt(time_index)
-    theta3 <- plogis(time_index - 0.5)
+resolve_tvcqr_case <- function(case) {
+  if (is.numeric(case)) {
+    if (length(case) != 1L || is.na(case) || !case %in% c(1, 2)) {
+      stop("Invalid case specification. Use 1 or 2.")
+    }
+    case_id <- as.integer(case)
+  } else if (is.character(case)) {
+    case_key <- tolower(trimws(case))
+    if (case_key %in% c("1", "case1", "case1_iid", "iid")) {
+      case_id <- 1L
+    } else if (case_key %in% c("2", "case2", "case2_dependent", "dependent")) {
+      case_id <- 2L
+    } else {
+      stop("Invalid case specification. Use 1, 2, or 'case2_dependent'.")
+    }
   } else {
     stop("Invalid case specification. Use 1 or 2.")
   }
   
-  # Generate response variable
-  y <- theta0 + theta1 * x[, 1] + theta2 * x[, 2] + theta3 * x[, 3] + error
+  case_key <- if (case_id == 1L) "case1_iid" else "case2_dependent"
+  case_label <- if (case_id == 1L) {
+    "Case 1"
+  } else {
+    "Case 2: locally stationary dependent covariates and errors"
+  }
+  
+  list(
+    case_id = case_id,
+    case_key = case_key,
+    case_label = case_label
+  )
+}
+
+tvcqr_theta_paths <- function(time_index) {
+  list(
+    theta0 = sin(2 * pi * time_index),
+    theta1 = rep(0.5, length(time_index)),
+    theta2 = 2 * log(1 + 2 * time_index),
+    theta3 = exp(-(time_index - 0.5)^2)
+  )
+}
+
+build_truncated_locally_stationary_series <- function(innovations,
+                                                      coeff_path,
+                                                      J = 100L,
+                                                      burn_in = 500L,
+                                                      scale = 1) {
+  J <- as.integer(J)
+  burn_in <- as.integer(burn_in)
+  
+  lag_matrix <- stats::embed(innovations, J + 1L)
+  lag_matrix <- lag_matrix[(burn_in + 1L):(burn_in + length(coeff_path)), , drop = FALSE]
+  coeff_matrix <- outer(coeff_path, 0:J, "^")
+  
+  scale * rowSums(coeff_matrix * lag_matrix)
+}
+
+generate_ts_case2_dependent <- function(n, J = 100L, burn_in = 500L) {
+  J <- as.integer(J)
+  burn_in <- as.integer(burn_in)
+  
+  if (is.na(J) || J < 0L) {
+    stop("J must be a non-negative integer.")
+  }
+  if (is.na(burn_in) || burn_in < 0L) {
+    stop("burn_in must be a non-negative integer.")
+  }
+  
+  time_index <- (1:n) / n
+  theta <- tvcqr_theta_paths(time_index)
+  
+  a_t <- 1 / 2 - (time_index - 1 / 2)^2
+  b_t <- 1 / 2 - time_index / 2
+  c_t <- 1 / 4 + time_index / 2
+  
+  total_length <- n + burn_in + J
+  zeta <- rnorm(total_length)
+  eta <- rnorm(total_length)
+  eps <- rnorm(total_length)
+  xi_aux <- (eta + eps) / sqrt(2)
+  
+  # Case 2 replaces the iid design by truncated locally stationary linear processes.
+  error <- build_truncated_locally_stationary_series(
+    innovations = zeta,
+    coeff_path = a_t,
+    J = J,
+    burn_in = burn_in,
+    scale = 1 / 4
+  )
+  x1 <- build_truncated_locally_stationary_series(
+    innovations = xi_aux,
+    coeff_path = b_t,
+    J = J,
+    burn_in = burn_in
+  )
+  x2 <- build_truncated_locally_stationary_series(
+    innovations = eta,
+    coeff_path = c_t,
+    J = J,
+    burn_in = burn_in
+  )
+  x3 <- stats::rchisq(n, df = 3) / 3
+  
+  x <- cbind(x1, x2, x3)
+  y <- theta$theta0 + theta$theta1 * x[, 1] + theta$theta2 * x[, 2] +
+    theta$theta3 * x[, 3] + error
+  
+  list(
+    x = x,
+    y = y,
+    error = error,
+    time_index = time_index,
+    theta0 = theta$theta0,
+    theta1 = theta$theta1,
+    theta2 = theta$theta2,
+    theta3 = theta$theta3,
+    case = 2L,
+    case_key = "case2_dependent",
+    case_label = "Case 2: locally stationary dependent covariates and errors",
+    J = J,
+    burn_in = burn_in
+  )
+}
+
+generate_ts <- function(n, case = 1, seed = NULL, J = 100L, burn_in = 500L) {
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  
+  case_info <- resolve_tvcqr_case(case)
+  time_index <- (1:n) / n
+  theta <- tvcqr_theta_paths(time_index)
+  
+  if (case_info$case_id == 2L) {
+    return(generate_ts_case2_dependent(n = n, J = J, burn_in = burn_in))
+  }
+  
+  x <- matrix(rnorm(n * 3), n, 3)
+  error <- rnorm(n, mean = 0, sd = 1)
+  y <- theta$theta0 + theta$theta1 * x[, 1] + theta$theta2 * x[, 2] +
+    theta$theta3 * x[, 3] + error
   
   return(list(
     x = x,
-    y = y, 
-    theta0 = theta0,
-    theta1 = theta1,
-    theta2 = theta2, 
-    theta3 = theta3
+    y = y,
+    error = error,
+    time_index = time_index,
+    theta0 = theta$theta0,
+    theta1 = theta$theta1,
+    theta2 = theta$theta2,
+    theta3 = theta$theta3,
+    case = case_info$case_id,
+    case_key = case_info$case_key,
+    case_label = case_info$case_label,
+    J = as.integer(J),
+    burn_in = as.integer(burn_in)
   ))
 }
 

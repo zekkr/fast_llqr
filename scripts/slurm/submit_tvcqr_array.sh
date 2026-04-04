@@ -8,6 +8,10 @@ is_pos_int() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]
 }
 
+is_nonneg_int() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
 export FASTQR_CASE="${FASTQR_CASE:-1}"
 export FASTQR_TAU="${FASTQR_TAU:-0.5}"
 export FASTQR_N="${FASTQR_N:-200}"
@@ -24,6 +28,8 @@ export FASTQR_BLAND="${FASTQR_BLAND:-0}"
 export FASTQR_EPS="${FASTQR_EPS:-1e-6}"
 export FASTQR_CPP_HELPER="${FASTQR_CPP_HELPER:-0}"
 export FASTQR_SEED_BASE="${FASTQR_SEED_BASE:-2025}"
+export FASTQR_J="${FASTQR_J:-100}"
+export FASTQR_BURN_IN="${FASTQR_BURN_IN:-500}"
 export FASTQR_MAX_SECONDS_PER_REP="${FASTQR_MAX_SECONDS_PER_REP:-7200}"
 
 # resources
@@ -50,6 +56,14 @@ for v in FASTQR_N FASTQR_NUM_REP CPUS_PER_TASK FASTQR_CHUNK_SIZE FASTQR_MAX_SECO
   val="${!v}"
   if ! is_pos_int "$val"; then
     echo "ERROR: $v must be a positive integer, got '$val'" >&2
+    exit 1
+  fi
+done
+
+for v in FASTQR_J FASTQR_BURN_IN; do
+  val="${!v}"
+  if ! is_nonneg_int "$val"; then
+    echo "ERROR: $v must be a non-negative integer, got '$val'" >&2
     exit 1
   fi
 done

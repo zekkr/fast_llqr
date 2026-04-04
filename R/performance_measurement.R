@@ -33,6 +33,10 @@ load_simulation_results <- function(case, tau, n, rep,
   cat(strrep("-", 80), "\n")
   
   results_list <- list()
+  case_label_default <- sprintf("Case %s", as.character(case))
+  if (model == "tvcqr" && exists("resolve_tvcqr_case", mode = "function")) {
+    case_label_default <- resolve_tvcqr_case(case)$case_label
+  }
   
   for (t in tau) {
     for (sample_size in n) {
@@ -68,6 +72,11 @@ load_simulation_results <- function(case, tau, n, rep,
             
             results_list[[key]] <- list(
               case = case,
+              case_label = if (!is.null(results_obj$config$case_label)) {
+                results_obj$config$case_label
+              } else {
+                case_label_default
+              },
               tau = t,
               n = sample_size,
               rep = rep,
@@ -92,6 +101,7 @@ load_simulation_results <- function(case, tau, n, rep,
         }, error = function(e) {
           results_list[[key]] <- list(
             case = case,
+            case_label = case_label_default,
             tau = t,
             n = sample_size,
             rep = rep,
@@ -105,6 +115,7 @@ load_simulation_results <- function(case, tau, n, rep,
       } else {
         results_list[[key]] <- list(
           case = case,
+          case_label = case_label_default,
           tau = t,
           n = sample_size,
           rep = rep,
@@ -562,6 +573,7 @@ create_summary_table <- function(results_list,
       # Create row data frame
       row_df <- data.frame(
         case = result$case,
+        case_label = if (!is.null(result$case_label)) result$case_label else sprintf("Case %s", result$case),
         tau = result$tau,
         n = result$n,
         rep = result$rep,
@@ -705,7 +717,11 @@ run_performance_analysis <- function(case = 1,
   
   cat("Configuration:\n")
   cat(sprintf("  Model: %s\n", model))
-  cat(sprintf("  Case: %d\n", case))
+  case_label <- sprintf("Case %s", as.character(case))
+  if (model == "tvcqr" && exists("resolve_tvcqr_case", mode = "function")) {
+    case_label <- resolve_tvcqr_case(case)$case_label
+  }
+  cat(sprintf("  Case: %s\n", case_label))
   cat(sprintf("  Tau: %s\n", paste(tau, collapse = ", ")))
   cat(sprintf("  Sample sizes: %s\n", paste(n, collapse = ", ")))
   cat(sprintf("  Replications: %d\n", rep))

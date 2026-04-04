@@ -2,6 +2,29 @@
 # TVCQR Simulation Helper Functions
 # ============================================================================ #
 
+complete_tvcqr_sim_config <- function(config) {
+  case_info <- resolve_tvcqr_case(config$case)
+  config$case <- case_info$case_id
+  config$case_key <- case_info$case_key
+  config$case_label <- case_info$case_label
+  
+  config$seed_base <- if (is.null(config$seed_base)) 2025L else as.integer(config$seed_base)
+  config$J <- if (is.null(config$J)) 100L else as.integer(config$J)
+  config$burn_in <- if (is.null(config$burn_in)) 500L else as.integer(config$burn_in)
+  
+  if (is.na(config$seed_base)) {
+    stop("config$seed_base must be an integer.")
+  }
+  if (is.na(config$J) || config$J < 0L) {
+    stop("config$J must be a non-negative integer.")
+  }
+  if (is.na(config$burn_in) || config$burn_in < 0L) {
+    stop("config$burn_in must be a non-negative integer.")
+  }
+  
+  config
+}
+
 #' Create TVCQR Methods List
 #' 
 #' @param Mm.factor_vec Vector of Mm.factor values to test
@@ -84,8 +107,16 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
 #' @return List containing estimates, H_seq, and timing results
 #' @export
 run_single_tvcqr_replication <- function(rep_id, config, methods) {
+  config <- complete_tvcqr_sim_config(config)
+  
   # Generate data
-  data <- generate_ts(n = config$n, case = config$case, seed = config$seed_base + rep_id)
+  data <- generate_ts(
+    n = config$n,
+    case = config$case,
+    seed = config$seed_base + rep_id,
+    J = config$J,
+    burn_in = config$burn_in
+  )
   x <- data$x
   y <- data$y
   
@@ -133,13 +164,20 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
 #' @return List containing simulation results
 #' @export
 run_tvcqr_simulation <- function(config) {
+  config <- complete_tvcqr_sim_config(config)
+  
   cat("========================================\n")
   cat("Starting TVCQR Simulation\n")
   cat("========================================\n")
-  cat(sprintf("Case: %d\n", config$case))
+  cat(sprintf("Case: %d (%s)\n", config$case, config$case_label))
   cat(sprintf("Tau: %.2f\n", config$tau))
   cat(sprintf("Sample size: %d\n", config$n))
   cat(sprintf("Number of replications: %d\n", config$num_rep))
+  cat(sprintf("Seed base: %d\n", config$seed_base))
+  if (config$case == 2L) {
+    cat(sprintf("Case 2 truncation J: %d\n", config$J))
+    cat(sprintf("Case 2 burn-in: %d\n", config$burn_in))
+  }
   cat(sprintf("Mm.factor values: %s\n", paste(config$Mm.factor, collapse = ", ")))
   cat("========================================\n\n")
   
@@ -206,6 +244,8 @@ run_tvcqr_simulation <- function(config) {
     method_names = method_names,
     Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config$Mm.factor),
     timestamp = Sys.time(),
+    case_label = config$case_label,
+    case_key = config$case_key,
     simulation_type = "tvcqr"  # Add identifier
   )
   
@@ -247,6 +287,10 @@ create_tvcqr_Mm_factor_mapping <- function(method_names, Mm.factor_vec) {
 #' @return File path where results were saved
 #' @export
 save_tvcqr_simulation_results <- function(results, output_dir = "data/tvcqr_simu_results") {
+  results$config <- complete_tvcqr_sim_config(results$config)
+  results$case_label <- results$config$case_label
+  results$case_key <- results$config$case_key
+  
   # Create output directory if it doesn't exist
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
@@ -271,9 +315,15 @@ save_tvcqr_simulation_results <- function(results, output_dir = "data/tvcqr_simu
 #' @param results Simulation results object
 #' @export
 print_tvcqr_simulation_summary <- function(results) {
+  config <- complete_tvcqr_sim_config(results$config)
+  
   cat("\n========================================\n")
   cat("TVCQR Simulation Summary\n")
   cat("========================================\n\n")
+  cat(sprintf("Case: %d (%s)\n", config$case, config$case_label))
+  cat(sprintf("Tau: %.2f\n", config$tau))
+  cat(sprintf("Sample size: %d\n", config$n))
+  cat(sprintf("Replications: %d\n\n", config$num_rep))
   
   timing_matrix <- results$timing_matrix
   
@@ -451,13 +501,15 @@ find_tvcqr_max_bias_replication <- function(results, method_name) {
 #' @return List containing x and y data
 #' @export
 extract_tvcqr_replication_data <- function(results, rep_id) {
-  config <- results$config
+  config <- complete_tvcqr_sim_config(results$config)
   
   # Regenerate the same data using the stored seed
   data <- generate_ts(
     n = config$n, 
     case = config$case, 
-    seed = config$seed_base + rep_id
+    seed = config$seed_base + rep_id,
+    J = config$J,
+    burn_in = config$burn_in
   )
   
   return(data)
