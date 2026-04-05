@@ -11,7 +11,7 @@ cat("Working directory:", getwd(), "\n")
 # Load required packages for the project
 required_packages <- c(
   "ggplot2", "gridExtra", "microbenchmark", "quantreg", "quantdr",
-  "Rcpp", "RcppArmadillo", "dplyr", "tidyr", "purrr"
+  "Rcpp", "RcppArmadillo", "dplyr", "tidyr", "purrr", "writexl", "readr"
 )
 
 # Install missing packages if needed

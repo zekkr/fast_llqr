@@ -3,7 +3,7 @@
 
 required_pkgs <- c(
   "microbenchmark", "quantreg", "doParallel", "foreach",
-  "doRNG", "dplyr", "ggplot2", "gridExtra"
+  "doRNG", "dplyr", "ggplot2", "gridExtra", "writexl", "readr"
 )
 
 missing_pkgs <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
