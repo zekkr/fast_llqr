@@ -26,6 +26,7 @@ CPUS_PER_TASK="${CPUS_PER_TASK:-56}"
 WALLTIME="${WALLTIME:-04:00:00}"
 PARTITION="${PARTITION:-cnall}"
 ACCOUNT="${ACCOUNT:-users}"
+MERGE_DEPENDENCY_TYPE="${FASTQR_MERGE_DEPENDENCY_TYPE:-afterany}"
 
 export FASTQR_CHUNK_SIZE="${FASTQR_CHUNK_SIZE:-$CPUS_PER_TASK}"
 
@@ -36,6 +37,11 @@ fi
 
 if ! awk -v t="$FASTQR_TAU" 'BEGIN { exit !(t+0==t && t>0 && t<1) }'; then
   echo "ERROR: FASTQR_TAU must be numeric and in (0,1), got '$FASTQR_TAU'" >&2
+  exit 1
+fi
+
+if [[ "$MERGE_DEPENDENCY_TYPE" != "afterok" && "$MERGE_DEPENDENCY_TYPE" != "afterany" ]]; then
+  echo "ERROR: FASTQR_MERGE_DEPENDENCY_TYPE must be 'afterok' or 'afterany', got '$MERGE_DEPENDENCY_TYPE'" >&2
   exit 1
 fi
 
@@ -91,7 +97,7 @@ EOF
 
 echo "Submitted array job: ${ARRAY_JOB_ID}  (tasks: ${NUM_TASKS}, chunk_size: ${FASTQR_CHUNK_SIZE})"
 
-MERGE_JOB_ID=$(sbatch --dependency=afterok:${ARRAY_JOB_ID} <<EOF | awk '{print $4}'
+MERGE_JOB_ID=$(sbatch --dependency=${MERGE_DEPENDENCY_TYPE}:${ARRAY_JOB_ID} <<EOF | awk '{print $4}'
 #!/bin/bash
 #SBATCH -J ${JOB_NAME}_merge
 #SBATCH -p ${PARTITION}
@@ -113,4 +119,4 @@ Rscript scripts/array/merge_llqr_array.R
 EOF
 )
 
-echo "Submitted merge job: ${MERGE_JOB_ID} (afterok:${ARRAY_JOB_ID})"
+echo "Submitted merge job: ${MERGE_JOB_ID} (${MERGE_DEPENDENCY_TYPE}:${ARRAY_JOB_ID})"
