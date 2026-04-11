@@ -1154,7 +1154,7 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
 # Sequential algorithm for one-dim LLQR (Fortran version)
 # ============================================================================ #
 llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14,
-                                     maxit = 1e6, bland = FALSE) {
+                                     maxit = 1e6, bland = FALSE, track_order = FALSE) {
   
   # Convert to vectors
   x <- as.vector(x)
@@ -1163,8 +1163,8 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
     z <- x
   }
   z <- as.vector(z)
-  # Keep output row order consistent with R llqr_seq/llqr_seq_ppro (sorted-z order).
-  z <- z[order(z)]
+  original_order <- order(z)
+  z <- z[original_order]
   
   # Get dimensions
   m <- length(x)
@@ -1210,9 +1210,16 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
                      H_mat = as.integer(H_mat))
   
   # Return results matching R function structure
+  ll_est <- result$ll_est
+  d_ll_est <- result$d_ll_est
+  if (track_order) {
+    ll_est <- ll_est[order(original_order)]
+    d_ll_est <- d_ll_est[order(original_order)]
+  }
+
   list(
-    ll_est = result$ll_est,
-    d_ll_est = result$d_ll_est,
+    ll_est = ll_est,
+    d_ll_est = d_ll_est,
     it_num = result$it_num,
     residual_est = matrix(result$residual_est, nrow = rounds, ncol = m),
     h = result$h,
@@ -1225,7 +1232,8 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
 # ============================================================================ #
 llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                                       Mm.factor = 1e-3, case = 1, tol = 1e-14,
-                                      maxit = 1e6, bland = TRUE) {
+                                      maxit = 1e6, bland = TRUE,
+                                      track_order = FALSE) {
   
   # Auto-load library if not already loaded
   # if (!.llqr_ppro_loaded) {
@@ -1235,8 +1243,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     z <- x
   }
   z <- as.vector(z)
-  # Keep output row order consistent with R llqr_seq/llqr_seq_ppro (sorted-z order).
-  z <- z[order(z)]
+  original_order <- order(z)
+  z <- z[original_order]
   if (!(case %in% c(1, 2))) {
     stop("Invalid case specification. Use 1 (normal) or 2 (uniform).")
   }
@@ -1291,19 +1299,27 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       h = h,
       tol = tol,
       maxit = maxit,
-      bland = bland
+      bland = bland,
+      track_order = track_order
     )
     fallback$M <- NA_real_
     fallback$n_sub <- rep(length(y), length(fallback$ll_est))
     return(fallback)
   }
+
+  ll_est <- result$ll_est
+  d_ll_est <- result$d_ll_est
+  if (track_order) {
+    ll_est <- ll_est[order(original_order)]
+    d_ll_est <- d_ll_est[order(original_order)]
+  }
   
   # Return results matching R's output format
   return(list(
-    ll_est = result$ll_est,
-    d_ll_est = result$d_ll_est,
+    ll_est = ll_est,
+    d_ll_est = d_ll_est,
     it_num = result$it_num,
     residual_est = result$residual_est,
-    H_seq = result$H_mat  # Note: Named H_seq to match R output
+    H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1)
   ))
 }

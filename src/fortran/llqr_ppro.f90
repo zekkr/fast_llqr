@@ -198,7 +198,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     logical :: inv_success
     integer :: H_subsample(nvar+1)
     integer :: idpos(m), idneg(m)
-    integer :: n_idpos, n_idneg, n_hbar
+    integer :: n_idpos, n_idneg, n_hbar, n_hbar_core
     integer :: Hbar(m)
     double precision :: P(m)
     integer :: u_in_IBs(m), v_in_IBs(m)
@@ -211,8 +211,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     logical :: is_in_H
     double precision :: u_subsample(m), v_subsample(m)
     ! Temporary arrays for simplex with correct dimensions
-    double precision :: gammaxs_simplex(m, nvar+1)
-    double precision :: bs_simplex(m)
+    double precision :: gammaxs_simplex(m+1, nvar+1)
+    double precision :: bs_simplex(m+1)
 
     ! rd>2 incremental update variables (matching R's approach)
     double precision :: xhinv_stored(nvar+1, nvar+1)
@@ -717,39 +717,26 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! IBs should have exactly ms elements, matching R
 
 
-            ! Initialize freevarrows
-            ! R code: freevarrow <- c(rep(TRUE,nvar + 1), rep(FALSE,length(u.in.IBs)),
-            !                         rep(FALSE,length(v.in.IBs)), TRUE, TRUE, TRUE)
-            ! First nvar+1 are TRUE (beta coefficients are free variables)
+            ! Initialize freevarrows to match the R construction:
+            ! c(rep(TRUE, nvar+1), rep(FALSE, length(u.in.IBs)), rep(FALSE, length(v.in.IBs)),
+            !   [TRUE for each aggregate row], TRUE for the objective row)
+            n_hbar_core = n_idpos + n_idneg
+            do i = 1, ms + 1
+                freevarrows(i) = .false.
+            end do
             do i = 1, nvar+1
                 freevarrows(i) = .true.
             end do
-            ! Next n_hbar are FALSE (u/v variables for Hbar)
-            do i = nvar+2, nvar+1+n_hbar
+            do i = nvar + 2, nvar + 1 + n_hbar_core
                 freevarrows(i) = .false.
             end do
-            ! BUG FIX: Aggregate variables and objective row must be TRUE!
-            ! After Hbar variables, set remaining entries to TRUE
-            ! For sl & sh case: v_L, u_H, and objective row are TRUE
-            ! For sl only: v_L and objective row are TRUE
-            ! For sh only: u_H and objective row are TRUE
             if (any(sl) .and. any(sh)) then
-                ! Set v_L, u_H, and objective row to TRUE
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.  ! v_L
-                freevarrows(nvar + 1 + n_hbar + 2) = .true.  ! u_H
-                freevarrows(ms + 1) = .true.  ! objective row
-            else if (any(sl)) then
-                ! Set v_L and objective row to TRUE
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.  ! v_L
-                freevarrows(ms + 1) = .true.  ! objective row
-            else if (any(sh)) then
-                ! Set u_H and objective row to TRUE
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.  ! u_H
-                freevarrows(ms + 1) = .true.  ! objective row
-            else
-                ! No aggregates, just objective row
-                freevarrows(ms + 1) = .true.  ! objective row
+                freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! sl aggregate row
+                freevarrows(nvar + 1 + n_hbar_core + 2) = .true.  ! sh aggregate row
+            else if (any(sl) .or. any(sh)) then
+                freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! single aggregate row
             end if
+            freevarrows(ms + 1) = .true.  ! objective row
 
             ! Initialize r1s, r2s for subsample BEFORE debug output
             ! Non-basic variables are H observations
@@ -922,10 +909,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 bs_simplex(i) = bs(i)
             end do
 
-            ! Pass m (actual leading dimension), not ms+1
-            ! The array gammaxs_simplex has dimension (m, nvar+1), not (ms+1, nvar+1)
+            ! Pass m+1-sized work arrays because the simplex stores the objective row
+            ! at row mv+1 even when mv == m.
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
+                                  m + 1, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
             if (no_pivot_flag) then
                 empty_pivot_count = empty_pivot_count + 1
                 mmm = mmm * 2.0d0
@@ -1698,25 +1685,23 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + ms
             end if
 
+            n_hbar_core = n_idpos + n_idneg
+            do i = 1, ms + 1
+                freevarrows(i) = .false.
+            end do
             do i = 1, nvar+1
                 freevarrows(i) = .true.
             end do
-            do i = nvar+2, nvar+1+n_hbar
+            do i = nvar + 2, nvar + 1 + n_hbar_core
                 freevarrows(i) = .false.
             end do
             if (any(sl) .and. any(sh)) then
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.
-                freevarrows(nvar + 1 + n_hbar + 2) = .true.
-                freevarrows(ms + 1) = .true.
-            else if (any(sl)) then
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.
-                freevarrows(ms + 1) = .true.
-            else if (any(sh)) then
-                freevarrows(nvar + 1 + n_hbar + 1) = .true.
-                freevarrows(ms + 1) = .true.
-            else
-                freevarrows(ms + 1) = .true.
+                freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! sl aggregate row
+                freevarrows(nvar + 1 + n_hbar_core + 2) = .true.  ! sh aggregate row
+            else if (any(sl) .or. any(sh)) then
+                freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! single aggregate row
             end if
+            freevarrows(ms + 1) = .true.
 
             do i = 1, nvar+1
                 r1s(i) = H_subsample(i) + nvar + 1
@@ -1733,7 +1718,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
             ! Run simplex (same as rd==2)
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
+                                  m + 1, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
             if (no_pivot_flag) then
                 empty_pivot_count = empty_pivot_count + 1
                 mmm = mmm * 2.0d0

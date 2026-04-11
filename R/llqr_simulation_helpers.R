@@ -93,7 +93,8 @@ create_llqr_methods <- function(Mm.factor_vec) {
     llqr_seq_fortran_wrapper(x = x, y = y, z = config$z, 
                              tau = config$tau, h = config$h, 
                              tol = config$tol, maxit = config$maxit, 
-                             bland = config$bland)
+                             bland = config$bland,
+                             track_order = config$track_order)
   }
   
   # Methods with Mm.factor parameter - create multiple versions
@@ -139,7 +140,8 @@ create_llqr_methods <- function(Mm.factor_vec) {
                                         Mm.factor = Mm_factor_local,
                                         case = config$case,
                                         tol = config$tol, maxit = config$maxit, 
-                                        bland = config$bland)
+                                        bland = config$bland,
+                                        track_order = config$track_order)
         }
       })
     }
