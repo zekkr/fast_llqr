@@ -1,0 +1,389 @@
+\documentclass[lineno]{biometrika}
+
+\usepackage{amsmath}
+%\usepackage{graphics}
+\usepackage{arydshln} % For \hdashline
+\usepackage{array}    % For custom column types
+\usepackage{booktabs} % For \toprule, \midrule, \bottomrule
+\usepackage{enumitem}
+
+%% Please use the following statements for
+%% managing the text and math fonts for your papers:
+%\usepackage{times}
+%\usepackage[cmbold]{mathtime}
+%\usepackage{bm}
+\usepackage[ruled,vlined]{algorithm2e}
+
+\usepackage{newtxtext}
+\usepackage[subscriptcorrection]{newtxmath}
+
+\newcommand{\blue}[1]{\textcolor{blue}{#1}}
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+\definecolor{maroon(html/css)}{rgb}{0.5, 0.0, 0.0}
+\definecolor{ultramarine}{rgb}{0.07, 0.04, 0.56}
+\newcommand{\tw}[1]{\textcolor{maroon(html/css)}{(TW: #1)}}
+\newcommand{\ek}[1]{\textcolor{ultramarine}{(EK: #1)}}
+\definecolor{blue2}{rgb}{0.1, 0.2, 0.6}
+
+
+%\usepackage{natbib}
+
+\graphicspath{{./art/}}
+
+\usepackage[plain,noend]{algorithm2e}
+
+\makeatletter
+\renewcommand{\algocf@captiontext}[2]{#1\algocf@typo. \AlCapFnt{}#2} % text of caption
+\renewcommand{\AlTitleFnt}[1]{#1\unskip}% default definition
+\def\@algocf@capt@plain{top}
+\renewcommand{\algocf@makecaption}[2]{%
+\addtolength{\hsize}{\algomargin}%
+\sbox\@tempboxa{\algocf@captiontext{#1}{#2}}%
+\ifdim\wd\@tempboxa >\hsize%     % if caption is longer than a line
+\hskip .5\algomargin%
+\parbox[t]{\hsize}{\algocf@captiontext{#1}{#2}}% then caption is not centered
+\else%
+\global\@minipagefalse%
+\hbox to\hsize{\box\@tempboxa}% else caption is centered
+\fi%
+\addtolength{\hsize}{-\algomargin}%
+}
+\makeatother
+
+%%% User-defined macros should be placed here, but keep them to a minimum.
+\def\Bka{{\it Biometrika}}
+\def\AIC{\textsc{aic}}
+\def\T{{ \mathrm{\scriptscriptstyle T} }}
+\def\v{{\varepsilon}}
+
+%\addtolength\topmargin{35pt}
+\DeclareMathOperator{\Thetabb}{\mathcal{C}}
+
+
+\begin{document}
+
+We first introduce some notation. Let $\mathbf{1}(\cdot)$ be the indicator function. For a vector $\mathbf{v}=(v_1,v_2\ldots,v_p)^\top\in\mathbb{R}^p$, let $|\mathbf{v}|=(\sum_{i=1}^pv_i^2)^{1/2}$. For a random vector $\mathbf{V}$, write $\|\mathbf{V}\|_q=[\mathbb{E}|\mathbf{V}|^q]^{1/q}$. Write $\|\mathbf{V}\|=\|\mathbf{V}\|_2$. For a $p\times p$ matrix $V$, let $\lambda_{\max}(V)$ and $\lambda_{\min}(V)$ denote its largest and smallest eigenvalues, respectively. Let the symbol $\lesssim$ mean “left side bounded by a
+positive constant times the right side” (the symbol $\gtrsim$ is defined similarly) Since we consider estimation problem at a fixed $\tau$-level, we omit the subscript $\tau$ if there is no confusion caused.
+
+\section{Theory}
+
+Let $(y_i,d_{i,n}(s))\in\mathbb R\times\mathbb R^q$ for $i=1,\ldots,n$, where $d_{i,n}$ is a design vector and
+$q$ is the parameter dimension. Let $w_i(s)\ge 0$ be a weight that depends on an evaluation index $s\in \mathcal{A}\subset \mathbb{R}$. For a fixed
+$\tau\in(0,1)$, define
+\begin{equation}
+\hat\theta_n(s)=\arg\min_{\theta\in\mathbb R^q}\sum_{i=1}^n w_{i,n}(s) \rho_\tau \bigl(y_i-d_{i,n}(s)^\top\theta\bigr),
+\qquad
+\rho_\tau(u)=u\{\tau-\mathbf 1(u<0)\}.
+\label{eq:weighted-qr}
+\end{equation}
+
+
+\begin{assumption}[Maximal Spacing]
+Let $\{s_1,s_2,\cdots, s_{m_n}\}\subset \mathcal{A}$ be the set of ordered evaluation points. For simplicity, we omit the dependence of $m_n$ on $n$. Assume that the maximal spacing satisfies $\max_{1 \le j \le m-1} |s_{j+1} - s_j| = O_{\mathbb{P}}(a_n)$.
+\end{assumption}
+
+\begin{assumption}[Stability of quantile estimator] 
+    Suppose there exists a bounded continuous function $\theta(\cdot):\mathcal{A}\to\mathbb{R}^q$ and a symmetric positive definite $q\times q$ scaled matrix $H_n$ such that $\sup_{s\in\mathcal{A}}|H_n(\hat{\theta}_n(s)-\theta(s))|=O_{\mathbb{P}}(\pi_n)$. And assume that ${h}_n \lesssim \lambda_{\min}(H_n)\le\lambda_{\max}(H_n)\lesssim  1$ for some positive sequence ${h}_n\to 0$.
+
+    $\sup_s|\hat\theta_{n,i}(s)-\theta_i(s)|=O_P(\pi_{n,i})$
+\end{assumption}
+
+\begin{assumption}[Stochastic Lipschitz Continuity and Boundness of Regressors]
+    Assume that for every $i$, there exists a non-negative random variable $C_i$ such that $|d_{i,n}(s) - d_{i,n}(t)| \le C_i |s - t|$ for any $s, t \in \mathcal{A}$.  Furthermore, assume that the $C_i$ satisfy $\max_{1 \le i \le n} C_i = O_{\mathbb{P}}(c_n)$.\ek{Suppose $\max_{1\le j\le n-1}\max_{i\in \mathcal{N}_n(s_j)}|H_n^{-1}d_{i,n}(s_j)|=O_{\mathbb{P}}(c_n)$ where $\mathcal{N}_n(s)$ is a neighborhood of evaluation index $s$ such that $w_{i,n}(s)=0$ for $i\notin\mathcal{N}_n(s)$}. 
+\end{assumption}
+
+
+\begin{assumption}[Bounded conditional density]\label{ass:density}
+\ek{Define filtration $\mathcal F_{i}=\sigma(\{(y_{\ell},d_{\ell}(\cdot)):\ell\le i-1\},d_i(\cdot))$}.
+For each $i$, the conditional density $f(\cdot|\mathcal F_i)$ exists and there is a constant $C_f>0$ such that
+\[
+\sup_{i\ge1}\ \sup_{y\in\mathbb R}\ f(y|\mathcal F_i)\le C_f
+\quad\text{a.s.}
+\]
+\end{assumption}
+
+
+\begin{remark}
+    Assumption 1 ensures that the grid of evaluation points is sufficiently dense. Intuitively, this suggests that the optimal solutions at adjacent points are close in some sense. Assumption 2 is a stability condition that typically holds when a Bahadur representation exists for the quantile estimator $\hat\theta_n(s)$. It is worth noting that the function $\theta(\cdot)$ need not be the true conditional quantile parameter in the strict sense of $Q_\tau(y_i \mid d_{i,n}(s)) = d_{i,n}(s)^\top\theta(s)$. Assumption 3 characterizes the stochastic continuity of the regressors $d_{i,n}$ with respect to $s$. The condition on the uniform stochastic boundedness of $C_i$ typically holds if we impose suitable moment or tail conditions on the regressors. For instance, in the context of TVCQR, one can choose $C_i = |x_i|$. If the predictors $x_i$ are sub-Gaussian with uniformly bounded sub-Gaussian norms, then we can take $c_n = \sqrt{\log n}$. Combining this with Assumption 1 implies that the variation of the regressors between two adjacent evaluation points is uniformly bounded. Specifically, we have $\max_{1 \le i \le n, 1 \le j \le m-1} |d_{i,n}(s_{j+1}) - d_{i,n}(s_j)| = O_{\mathbb{P}}(c_n a_n)$.
+\end{remark}
+
+    
+
+
+\begin{theorem}[Sign stability of the residuals]
+\label{thm:signstability}
+Recall $\hat e_i(s)=y_i-d_i(s)^\top\hat\theta(s)$. Suppose Assumptions 1--3.
+Let
+\[
+\bar S_{j,n}:=\Big\{i\in \mathcal N_n(s_j): |\hat e_i(s_j)|>M_n\Big\}
+= (H_j\cup L_j)\cap \mathcal N_n(s_j).
+\]
+Choose $M_n=\bar\pi_n g_n$ where $\bar\pi_n\gtrsim c_n\pi_n+h_n^{-1}a_n c_n\pi_n+c_n a_n,$
+and $g_n\to\infty$ is any sequence such that $M_n\to 0$.
+Then we have as $n\to\infty$,
+\begin{equation}
+    \mathbb{P}\Big(\forall\, j=1,\dots,m-1,\ \forall\, i\in \bar S_{n,j}:\ 
+    \text{sign}(\hat e_i(s_{j+1}))=\text{sign}(\hat e_i(s_j))
+\Big)\to 1.
+\end{equation}
+
+\end{theorem}
+
+\begin{proof}[of Theorem \ref{thm:signstability}]
+Define the event
+\[
+\mathcal E_n
+:=\left\{
+\max_{1\le j\le m-1}\ \max_{i\in \mathcal N_n(s_j)}
+\big|\hat e_i(s_{j+1})-\hat e_i(s_j)\big|
+\le M_n
+\right\}.
+\]
+On $\mathcal E_n$, for any $j\in\{1,\dots,m-1\}$ and any $i\in \bar S_{j,n}$, if $|\hat{e}_i(s_j)|>M_n$, it is easy to see that $\text{sign}(\hat e_i(s_{j+1}))=\text{sign}(\hat e_i(s_j))$. Hence, on $\mathcal E_n$ we have simultaneously
+\[
+\forall\, j=1,\dots,m-1,\ \forall\, i\in \bar S_{j,n}:\ 
+\text{sign}(\hat e_i(s_{j+1}))=\text{sign}(\hat e_i(s_j)).
+\]
+Therefore it remains to show $\mathbb{P}(\mathcal E_n)\to 1$.
+
+\medskip
+A simple calculation yields the decomposition
+\begin{equation}
+\label{eq:residual_increment_decomp}
+\begin{aligned}
+\hat{e}_i(s_{j+1})-\hat e_i(s_j)
+=&\left[H_n^{-1}d_i(s_j)\right]^\top\left[H_n(\hat\theta(s_j)-\theta(s_j))-H_n(\hat\theta(s_{j+1})-\theta(s_{j+1}))\right]\\
+&+\left[H_n^{-1}(d_i(s_j)-d_i(s_{j+1}))\right]^\top \left[H_n(\hat\theta(s_{j+1})-\theta(s_{j+1}))\right]\\
+&+\left[H_n^{-1}d_i(s_j)\right]^\top\left[H_n(\theta(s_j)-\theta(s_{j+1}))\right]\\
+&+\left[d_i(s_j)-d_i(s_{j+1})\right]^\top\theta(s_{j+1})\\
+=:&\ I+II+III+IV.
+\end{aligned}
+\end{equation}
+Let $\max_{ij}$ denote $\max_{1\le j\le m-1}\max_{i\in\mathcal N_n(s_j)}$.
+By Assumptions 1--3 and Cauchy--Schwarz,
+\[
+\max_{ij}|I|=O_{\mathbb{P}}(c_n\pi_n),\quad
+\max_{ij}|II|=O_{\mathbb{P}}(h_n^{-1}a_n c_n\pi_n),\quad
+\max_{ij}|III|=O_{\mathbb{P}}(c_n a_n),\quad
+\max_{ij}|IV|=O_{\mathbb{P}}(c_n a_n).
+\]
+Combining these bounds,
+\[
+\max_{ij}\big|\hat e_i(s_{j+1})-\hat e_i(s_j)\big|
+=O_{\mathbb{P}}\big(c_n\pi_n+h_n^{-1}a_n c_n\pi_n+c_n a_n\big)
+=O_{\mathbb{P}}(\bar\pi_n).
+\]
+Now take $M_n=\bar\pi_n g_n$ with any sequence $g_n\to\infty$. The property of $O_{\mathbb{P}}(\cdot)$ implies that
+\[
+\mathbb{P}(\mathcal E_n^c)
+=\mathbb{P}\left(
+\max_{ij}\big|\hat e_i(s_{j+1})-\hat e_i(s_j)\big|>M_n
+\right)
+\to 0,
+\]
+which completes the proof.
+\end{proof}
+
+
+\ek{Theorem \ref{thm:signstability} shows that with high probability, our reduced LP can obtain exactly the same solution as full LP.}
+
+
+\begin{theorem}[Size of subsample]\label{thm:SizeOfSubsample}
+Recall the partition \eqref{eq:partition} and note that $|S_j|=\sum_{i=1}^n\mathbf{1}(|\hat e_i(s_j)|\le M_n)$ is the initial subsample size at the evaluation point $s_{j+1}$.
+Suppose Assumptions~1--4 hold. And $\gamma_n$ is chosen as the same as Theorem \ref{thm:signstability}.
+Then we have, as $n\to\infty$,
+\[
+\max_{1\le j\le m-1}\ \mathbb E|S_j| = O(nM_n).
+\]
+Note that here $|\cdot|$ represents the cardinality of a set.
+
+\end{theorem}
+
+\begin{proof}[of Theorem~\ref{thm:SizeOfSubsample}]
+
+Write $\tilde{\beta}_{i,n}(s,\vartheta)=d_{i,n}(s)^\top\theta(s)+[H_n^{-1}d_{i,n}(s)]^\top\vartheta$ for short. Then by Assumption \ref{ass:density} and the fact that $d_{i,n}(s)\in \mathcal{F}_i$, we have for any $s\in \mathcal{A}$ and $\vartheta\in\mathbb{R}^q$,
+\[
+\begin{aligned}
+    N_n(s,\vartheta)&\triangleq \sum_{i=1}^n\mathbb{P}(|y_i-d_{i,n}(s)^\top\theta(s)-[H_n^{-1}d_{i,n}(s)]^\top\vartheta|\le M_n)\\
+    &=\sum_{i=1}^n\mathbb{E(}\mathbb{P}(|y_i-d_{i,n}(s)^\top\theta(s)-[H_n^{-1}d_{i,n}(s)]^\top\vartheta|\le M_n\mid \mathcal{F}_{i}))\\\
+    &=\sum_{i=1}^n\mathbb{E}(\int_{\tilde{\beta}_{i,n}(s,\vartheta)-M_n}^{\tilde{\beta}_{i,n}(s,\vartheta)+M_n}f(y|\mathcal F_i)dy)\\
+    &\le C nM_n,
+\end{aligned}
+\]
+where $C$ is a constant independent of $s$ and $\vartheta$. Then $\sup_{s,\vartheta}N_n(s,\vartheta)=O(nM_n)$. The Theorem holds in view of the fact that 
+\[
+\mathbb{E}|S_j|=\mathbb{E}N_n(s_j,H_n(\hat \theta_n(s_j)-\theta(s_j)))\le \mathbb{E}\sup_{s,\vartheta}N_n(s,\vartheta)=O(nM_n).
+\]
+
+
+
+\end{proof}
+
+\begin{remark}
+    Theorem \ref{thm:SizeOfSubsample} implies that the expected subsample size at any evaluation point constitutes a small fraction of $n$. In practice, a suitable choice for $g_n$ is an arbitrarily slow-growing divergent sequence, such as $g_n = C \log \log n$ ($n\ge3$) for some $C > 0$.
+\end{remark}
+
+
+
+\ek{Show in Appendix} We can see that under some regular conditions, the above assumptions are satisfied for LLQR and TVCQR.
+
+In the case of \textbf{LLQR}, under Assumption~1 we take $s_j=X_{(j)}$, where
+$X_{(1)}\le \cdots \le X_{(n)}$ are the order statistics of $X_1,\ldots,X_n$.
+~\cite{deheuvels1984strong} shows that if $X_i$ takes values in a bounded support, then under suitable regularity conditions,
+$\max_{1\le i\le n-1}\big|X_{(i+1)}-X_{(i)}\big|
+=O_{\mathrm{a.s.}}\!\big(\frac{\log n}{n}\big)$.
+Moreover, when $X_i\stackrel{\mathrm{iid}}{\sim}N(0,1)$, ~\cite{deheuvels1985limiting} establishes the sharper bound
+$\max_{1\le i\le n-1}\big|X_{(i+1)}-X_{(i)}\big|
+=O_{\mathrm{a.s.}}\!\big(\frac{\log\log n}{\sqrt{\log n}}\big)$.
+
+~\cite{kong2010uniform} show that, under standard regularity conditions, Assumption~2 holds with
+$H_n=\mathrm{Diag}(1,b_n)$, $h_n=b_n$, and
+$\pi_n=\big(\frac{\log n}{n b_n}\big)^{1/2}$.
+
+For Assumption~3 in the LLQR setting, we have $d_{i,n}(s)=(1,\,X_i-s)^\top$, hence
+$|d_{i,n}(s)-d_{i,n}(t)|\le |s-t|$, so we may take $c_n=1$. In addition,
+$H_n^{-1}d_{i,n}(s)=\big(1,\,(X_i-s)/b_n\big)^\top=O(1)$ for
+$i\in \mathcal N_n(s):=\{i:|X_i-s|\le b_n\}$, which follows immediately under bounded kernel weights.
+
+Finally, for Assumption~4 we may define
+$\mathcal F_i=\sigma(X_1,y_1,\ldots,X_{i-1},y_{i-1},X_i)$.
+The existence and uniform boundedness of the conditional density $f_{Y_i|\mathcal F_i}(y\mid \mathcal F_i)$ can be further relaxed
+to the corresponding condition for $f_{Y_i|X_i}(y\mid X_i)$.
+
+
+\begin{corollary}[LLQR specialization]
+\label{cor:llqr}
+In the LLQR setting \eqref{eq:LLQR}, suppose Assumption~A1 in the Appendix holds.
+Take the evaluation grid $s_j=X_{(j)}$ and choose the residual threshold
+$M_n=\bar\pi_n g_n$, where
+$\bar\pi_n=(\log n/(n b_n))^{1/2}+a_n$ and $g_n=C\log\log n$ for $n\ge3$ and some constant $C>0$.
+Then Theorems~\ref{thm:signstability} and~\ref{thm:SizeOfSubsample} apply to LLQR with residuals
+$\hat e_i(s_j)=y_i-\hat\beta_0(s_j)-\hat\beta_1(s_j)(X_i-s_j)$.
+
+In particular, the spacing term $a_n$ depends on the distribution of the design:
+(i) if $X_i\stackrel{\mathrm{iid}}{\sim}U(0,1)$, then $a_n=\log n/n$, which is of smaller order than
+$(\log n/(n b_n))^{1/2}$ under the bandwidth conditions in the Appendix;
+(ii) if $X_i\stackrel{\mathrm{iid}}{\sim}N(0,1)$, then $a_n=\log\log n/\sqrt{\log n}$, which is in general not comparable
+to $(\log n/(n b_n))^{1/2}$.
+\end{corollary}
+
+
+In the case of \textbf{TVCQR} (under the setting of \cite{wu2017nonparametric}), the covariates and errors admit the representations $\mathbf{x}_i=\mathbf{H}(i/n,\mathcal G_i)$ and $e_i=G_\tau(i/n,\mathcal F_i,\mathcal G_i)$, and the response satisfies the time-varying coefficient model $y_i=\beta(i/n)^\top\mathbf{x}_i+e_i$ (at quantile level $\tau$). We take an equally spaced grid $s_j=t_j=j/n$, so the maximal spacing is $a_n:=\max_{1\le j\le n-1}|s_{j+1}-s_j|=1/n$. The local linear design vector is $d_{i,n}(s)=(\mathbf{x}_i^\top,\ \mathbf{x}_i^\top(i/n-s))^\top\in\mathbb{R}^{2p}$. Accordingly, we set $H_n=\mathrm{Diag}(I_p,b_n I_p)$ and $h_n=b_n$, so that $H_n^{-1}d_{i,n}(s)=(\mathbf{x}_i^\top,\ \mathbf{x}_i^\top(i/n-s)/b_n)^\top$. With bounded kernel weights, for $i\in\mathcal N_n(s):=\{i:|(i/n-s)/b_n|\le 1\}$ we have $|(i/n-s)/b_n|\le 1$ and thus $|H_n^{-1}d_{i,n}(s)|=O(|\mathbf{x}_i|)$.
+
+For Assumption~3, note that $d_{i,n}(s)-d_{i,n}(t)=(\mathbf{0}_p^\top,\ \mathbf{x}_i^\top(t-s))^\top$, hence $|d_{i,n}(s)-d_{i,n}(t)|\le C_i|s-t|$ with $C_i=|\mathbf{x}_i|$. If we further assume $|\mathbf{x}_i|$ is sub-Gaussian with uniformly bounded sub-Gaussian norms, then $\max_{1\le i\le n}|\mathbf{x}_i|=O_{\mathbb P}(\sqrt{\log n})$, so we may take $c_n=\sqrt{\log n}$.
+
+For Assumption~2, Lemma~3 of \cite{wu2017nonparametric} implies that under [A0]--[A4], $b_n\to0$, and $nb_n^4/\log^7 n\to\infty$, the local linear estimator satisfies $\sup_{s\in(0,1)}|H_n^{-1}(\hat\theta_n(s)-\theta(s))|\le_{\mathbb P}\pi_n$ with $\pi_n=(nb_n)^{-1/2}\log^4 n+b_n^2\log n$.
+
+For Assumption~\ref{ass:density}, \cite{wu2017nonparametric} imposes a uniform bound on the conditional density of the error process, namely $f(t,x\mid\mathcal G_i)$ for $e_i=G_\tau(i/n,\mathcal F_i,\mathcal G_i)$. Since $\mathbf{x}_i=\mathbf{H}(i/n,\mathcal G_i)$ is $\mathcal G_i$-measurable and $y_i=\beta(i/n)^\top\mathbf{x}_i+e_i$, this condition can be equivalently viewed as a uniform bound on the conditional density of $y_i$ given $\mathcal G_i$ (or given $(\mathbf{x}_i,\mathcal G_i)$). In particular, assuming $\sup_{t\in[0,1],\,x\in\mathbb R} f(t,x\mid\mathcal G_i)\le C$ ensures the bounded conditional density requirement in Assumption~4, and therefore Theorem~2 applies to control the expected size of the uncertain set $S_j$.
+
+\begin{corollary}[TVCQR specialization]
+\label{cor:llqr}
+In the TVCQR setting \eqref{eq:TVCQR}, suppose the conditions stated in the Appendix hold. 
+Take the evaluation grid $s_j=j/n$ and choose the residual threshold $M_n=\bar\pi_n g_n$, where 
+$\bar\pi_n=\frac{\log^{9/2} n}{(nb_n)^{1/2}}+b_n^2\log^{3/2} n$ and $g_n=C\log\log n$ for $n\ge 3$ and some constant $C>0$. 
+Then Theorems~\ref{thm:signstability} and~\ref{thm:SizeOfSubsample} apply to LLQR with residuals
+$\hat e_i(s_j)=y_i-x_i^\top\hat\beta_0(s_j)-(i/n-s_j)x_i^\top\hat\beta_1(s_j)$.
+\end{corollary}
+
+\begin{proposition}[Computational complexity comparison]
+\label{prop:complexity}
+Let $s_1<\cdots<s_m$ be the evaluation grid and let $d$ denote the number of free regression variables in the local linear formulation (e.g., $d=2(p+1)$ for TVCQR and $d=2$ for univariate LLQR). 
+At each $s_j$, the full LP \eqref{eq:full-lp} has $O(n)$ inequality constraints. 
+Assume a standard revised-simplex implementation in which one pivot (basis update) costs $O(rd)$ when the LP has $r$ active constraints.
+
+\smallskip
+\noindent\textbf{(i) Baseline (no acceleration).}
+If one solves the full LP independently at each evaluation point using simplex, and $\kappa^{\mathrm{full}}_j$ denotes the number of pivots needed at $s_j$, then the total time is
+$O(mnd)+O\big(d\sum_{j=1}^m \kappa^{\mathrm{full}}_j\,n\big)$.
+Here $O(mnd)$ accounts for forming local weights/designs across $m$ points, and the pivoting cost is $O(d\,\kappa^{\mathrm{full}}_j\,n)$ per point.
+
+\smallskip
+\noindent\textbf{(ii) Sequential screening--aggregation with warm starts.}
+At step $j\to j{+}1$, form residuals $\hat e_i(s_j)$ and screen by \eqref{eq:partition} to obtain the uncertain set $S_j=\{i:|\hat e_i(s_j)|\le M_n\}$. 
+The reduced LP at $s_{j+1}$ keeps the constraints indexed by $S_j$ and aggregates the remaining constraints into at most two weighted constraints (from $H_j$ and $L_j$), hence it has either $|S_j|$, $|S_j|+1$, or $|S_j|+2$ constraints; for simplicity we write this as $|S_j|$. 
+Let $\kappa^{\mathrm{seq}}_j$ be the number of pivots needed to solve the reduced LP at $s_{j+1}$ starting from a warm start (basis information from $s_j$), and let $R_j\ge1$ be the number of (rare) restarts due to threshold adaptation/verification. 
+Then the total time is
+$O(mnd)+O\big(d\sum_{j=1}^{m-1} R_j\,\kappa^{\mathrm{seq}}_j\,|S_j|\big)$.
+
+\smallskip
+\noindent\textbf{(iii) Provable improvement under Theorem~\ref{thm:SizeOfSubsample}.}
+If Theorem~\ref{thm:SizeOfSubsample} holds so that $\max_{1\le j\le m-1}\mathbb E|S_j|=O(nM_n)=o(n)$, then the expected pivoting cost of the sequential method satisfies
+$\mathbb E\big[\sum_{j=1}^{m-1} R_j\,\kappa^{\mathrm{seq}}_j\,|S_j|\big]
+=O\big(nM_n\sum_{j=1}^{m-1}\mathbb E[R_j\,\kappa^{\mathrm{seq}}_j]\big)$,
+whereas the baseline pivoting cost is $O\big(n\sum_{j=1}^m \kappa^{\mathrm{full}}_j\big)$.
+In particular, when $\kappa^{\mathrm{seq}}_j$ and $\kappa^{\mathrm{full}}_j$ are of comparable order, the screening--aggregation step yields an $M_n$-level reduction in the dominant simplex cost by reducing the LP size from $n$ constraints to $|S_j|=O_{\mathbb P}(nM_n)$ constraints.
+Moreover, since we warm start at $s_{j+1}$ using the optimal basis information from $s_j$, the two consecutive optima are expected to be close and hence $\kappa^{\mathrm{seq}}_j$ is typically smaller than $\kappa^{\mathrm{full}}_j$ in practice; establishing a rigorous bound on simplex pivot counts in this sequential setting remains an open problem.
+\end{proposition}
+
+
+
+
+\section{Simulation study}
+
+We consider the following three settings.
+
+(a) LLQR, $X_i$ iid $N(0,1)$ and $y_i=2X_i^2 +1+e_i$ with $e_i\ \text{i.i.d. }\sim N(0,1)$. 
+
+(b) LLQR, $X_i$ iid $U(0,1)$ and $y_i=2X_i^2 +1+e_i$ with $e_i\ \text{i.i.d. }\sim N(0,1)$.
+
+(c) TVCQR. $x_{i,j}\ \text{i.i.d. }\sim N(0,1)$ and $y_i=\theta_0(i/n)+\theta_1(i/n)x_{i,1}+\theta_2(i/n)x_{i,2}+\theta_3(i/n)x_{i,3}+e_i$ with $e_i\ \text{i.i.d. }\sim N(0,1)$ for $i=1,\ldots,n$ and $j=1,2,3$. Let $\theta_0(i/n)=\sin(\frac{2\pi i}{n})$, $\theta_1(i/n)\equiv 0.5$, $\theta_2(i/n)=2\log (1+2i/n)$ and $\theta_3(i/n)=\exp(-(i/n-0.5)^2)$. 
+
+We compare our results with Quantreg package in R.
+
+The tuning parameter in $M_n$ is chosen as $C=10^{-4}$.
+
+The result is given in Table \ref{tab:simu_tau05}.
+
+Due to page limit, we only consider $\tau=0.5$ here. Some other results are given in the Appendix.
+
+
+
+\begin{table}[htbp]
+	\centering
+	\caption{Comparison of computation time (in seconds) at $\tau=0.5$ across various sample sizes}
+	\begin{tabular}{lrrrrrrrr}
+		\toprule
+		& \multicolumn{2}{c}{$n=200$} & \multicolumn{2}{c}{$n=500$} & \multicolumn{2}{c}{$n=1000$} & \multicolumn{2}{c}{$n=2000$} \\
+		\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+		Method & Mean & Range & Mean & Range & Mean & Range & Mean & Range \\
+		\midrule
+		rq & 0.17 & 0.66 & 0.52 & 0.60 & 1.8 & 1.5 & 6.5 & 5.4 \\
+		seq & 0.042 & 0.72 & 0.13 & 0.34 & 0.47 & 1.4 & 2.3 & 2.0 \\
+		seq(ft) & 0.0025 & 0.012 & 0.012 & 0.050 & 0.052 & 0.055 & 0.24 & 1.1 \\
+		ppro(2) & 0.084 & 0.29 & 0.20 & 0.33 & 0.61 & 2.1 & 2.0 & 1.4 \\
+		seq+ppro(2) & 0.078 & 0.33 & 0.19 & 0.39 & 0.49 & 0.68 & 1.5 & 1.1 \\
+		seq+ppro(2)(ft) & 0.0055 & 0.018 & 0.023 & 0.046 & 0.13 & 0.31 & 1.0 & 3.3 \\
+		\bottomrule
+	\end{tabular}
+	\label{tab:simu_tau05}
+\end{table}
+ 
+
+\bibliographystyle{biometrika}
+\bibliography{paper-ref}
+
+\section{Appendix}
+
+\subsection{Theory}
+
+\textit{Assumption A1}.
+
+(\romannumeral1) $q_\tau(z)\in \mathcal{C}^3(\mathcal{X})$ where $\mathcal{X}$ is the support of $X$. $d^2 q_\tau(z)/d z^2$ is bounded with bounded first order derivatives.
+
+(\romannumeral2) The distribution of $X$ has a strictly positive and continuously differentiable probability density function (p.d.f.) $f(x)$ on $\mathbb{R}$.
+
+(\romannumeral3) The conditional distribution of $Y$ given $X$ has a bounded, Lipschitz continuous p.d.f. $f(y|x)=\partial F(y|x)/\partial y$ in the sense that $|f(y|X)-f(y^\prime|X)|\le C|y-y^\prime|\ \text{a.s.}$ for some constant $C>0$. And we further assume that $\inf_{(x,y)\in\mathcal{X}\times\mathbb{R}}f(y|x)\ge\eta>0$ for some positive constant $\eta$.  
+
+(\romannumeral4) The kernel function $K(\cdot)$ is nonnegative, symmetric and Lipschitz continuous over a compact support $\mathcal{K}=[-1,1]$.
+
+(\romannumeral5) The bandwidth $b_n$ satisfies that $b_n\to 0$, $nb_n/\log n\to \infty$ and $nb_n^5/\log n\to0$.
+
+\begin{remark}
+    We specialize the assumptions from \cite{kong2010uniform} to the i.i.d. case, a restriction necessary to ensure uniform control over the maximal spacing of our evaluation points. The correspondence between their assumptions and ours is as follows. Assumptions [A1] and [A2] of \cite{kong2010uniform} are readily satisfied by the check function $\rho_\tau(x)$ and the error term $e_\tau=Y-q_\tau(X)$. Their Assumptions [A3] and [A5] correspond directly to our (\romannumeral4) and (\romannumeral1), respectively. The remaining assumptions can be derived from our framework: [A4] follows from our (\romannumeral2), [A6] (with $\lambda_2=1/2$) from our (\romannumeral5), and [A7] from our (\romannumeral2) and (\romannumeral3), all under the i.i.d. setting.
+\end{remark} 
+
+\textit{Assumption A2}.
+
+Assume Assumptions [A0]-[A4] of \cite{wu2017nonparametric} hold. And $b_n\to 0$, $nb_n^4/\log^7 n\to \infty$.
+
+\end{document}
