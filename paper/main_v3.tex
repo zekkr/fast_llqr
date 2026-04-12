@@ -514,7 +514,7 @@ y_i=\theta_0(i/n)+\theta_1(i/n)x_{i,1}+\theta_2(i/n)x_{i,2}+\theta_3(i/n)x_{i,3}
 where $\theta_0(t)=\sin(2\pi t)$, $\theta_1(t)\equiv 0.5$, $\theta_2(t)=2\log(1+2t)$, and
 $\theta_3(t)=\exp\{-(t-0.5)^2\}$. Case~4 uses the same coefficient functions as Case~3, but generates the covariates
 and errors from a locally stationary short-range dependent process; the detailed construction is given in
-Appendix~\ref{app:supplement}. We consider sample sizes $n\in\{200,500,1000,2000,5000\}$ and $1000$ Monte Carlo
+Appendix~\ref{app:supplement}. We consider sample sizes $n\in\{200,500,1000,2000,5000\}$ and $100$ Monte Carlo
 replications per configuration. The main text focuses on $\tau=0.5$, while the additional results at
 $\tau=0.2$ and $\tau=0.8$ are deferred to the Appendix.
 
@@ -539,10 +539,10 @@ baseline direct local fit, \texttt{seq(ft)}, and \texttt{screen-seq(2)(ft)}; the
 \end{figure}
 
 Across all four cases, \texttt{seq(ft)} yields a substantial reduction in mean runtime relative to the baseline.
-The relation between \texttt{screen-seq(2)(ft)} and \texttt{seq(ft)} is more mixed. In the two LLQR cases it can
-provide further reductions at some intermediate sample sizes, whereas in the two TVCQR cases it is slower than
-\texttt{seq(ft)} for the sample sizes displayed. The overall pattern is consistent with warm starts providing the main
-computational gain, while the effect of screening depends more strongly on the model setting.
+The comparison between \texttt{screen-seq(2)(ft)} and \texttt{seq(ft)} is more mixed. Screening can provide additional
+reductions at some moderate sample sizes, but this advantage is not uniform and can reverse at the largest sample size
+displayed. The overall pattern is consistent with warm starts providing the main computational gain, while the effect
+of screening depends more strongly on the model setting.
 
 Complete numerical summaries, including all reported methods, the ranges, and the results at $\tau=0.2$ and
 $\tau=0.8$, are given in Appendix Table~\ref{tab:runtime_full}.

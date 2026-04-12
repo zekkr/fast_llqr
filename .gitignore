@@ -70,18 +70,8 @@ venv/
 /docs/_build/
 /docs/build/
 
-# Paper sources
-/paper/*.aux
-/paper/*.bbl
-/paper/*.blg
-/paper/*.fdb_latexmk
-/paper/*.fls
-/paper/*.log
-/paper/*.out
-/paper/main_v3.pdf
-/paper/*.synctex.gz
-/paper/*.thm
-/paper/art/*-eps-converted-to.pdf
+# Paper drafts and LaTeX build artifacts
+/paper/
 
 # =================================
 # System and IDE Files

@@ -9,25 +9,32 @@ if (length(file_arg) == 0L) {
 }
 script_path <- normalizePath(sub("^--file=", "", file_arg[1]), mustWork = TRUE)
 paper_dir <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
-data_path <- file.path(paper_dir, "data", "runtime_summary.csv")
+active_data_path <- file.path(paper_dir, "data", "runtime_summary_rep100.csv")
+backup_data_path <- file.path(paper_dir, "data", "runtime_summary_rep1000.csv")
 art_dir <- file.path(paper_dir, "art")
 generated_dir <- file.path(paper_dir, "generated")
 
 dir.create(art_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(generated_dir, recursive = TRUE, showWarnings = FALSE)
 
-runtime <- read.csv(
-  data_path,
-  stringsAsFactors = FALSE,
-  colClasses = rep("character", 7L)
-)
-runtime$case_id <- as.integer(runtime$case_id)
-runtime$tau <- as.numeric(runtime$tau)
-runtime$n <- as.integer(runtime$n)
-runtime$mean_str <- runtime$mean
-runtime$range_str <- runtime$range
-runtime$mean_value <- as.numeric(runtime$mean_str)
-runtime$range_value <- as.numeric(runtime$range_str)
+read_runtime <- function(path) {
+  dat <- read.csv(
+    path,
+    stringsAsFactors = FALSE,
+    colClasses = rep("character", 7L)
+  )
+  dat$case_id <- as.integer(dat$case_id)
+  dat$tau <- as.numeric(dat$tau)
+  dat$n <- as.integer(dat$n)
+  dat$mean_str <- dat$mean
+  dat$range_str <- dat$range
+  dat$mean_value <- as.numeric(dat$mean_str)
+  dat$range_value <- as.numeric(dat$range_str)
+  dat
+}
+
+runtime <- read_runtime(active_data_path)
+runtime_backup <- read_runtime(backup_data_path)
 
 case_map <- c(
   "1" = "Case 1: LLQR (Gaussian design)",
@@ -59,6 +66,9 @@ all_methods <- c(
 expected_rows <- 4L * 3L * 7L * 5L
 if (nrow(runtime) != expected_rows) {
   stop(sprintf("Expected %d runtime rows, found %d.", expected_rows, nrow(runtime)))
+}
+if (nrow(runtime_backup) != expected_rows) {
+  stop(sprintf("Expected %d backup runtime rows, found %d.", expected_rows, nrow(runtime_backup)))
 }
 
 build_main_figure <- function(dat) {
@@ -147,18 +157,14 @@ build_main_figure <- function(dat) {
   )
 }
 
-emit_longtable <- function(dat) {
-  output_path <- file.path(generated_dir, "runtime_summary_longtable.tex")
-  con <- file(output_path, open = "w")
-  on.exit(close(con), add = TRUE)
-
-  writeLines(c(
+format_longtable_lines <- function(dat, replications) {
+  lines <- c(
     "\\begingroup",
     "\\scriptsize",
     "\\setlength{\\tabcolsep}{2.8pt}",
     "\\renewcommand{\\arraystretch}{0.95}",
     "\\begin{longtable}{lllrrrrrrrrrr}",
-    "\\caption{Complete runtime summaries for the four simulation settings. Case~1 = LLQR (Gaussian design), Case~2 = LLQR (Uniform design), Case~3 = TVCQR (i.i.d. design), and Case~4 = TVCQR (dependent design). Entries report the Monte Carlo mean computation time and range (max--min), in seconds, over $1000$ replications.}\\label{tab:runtime_full}\\\\",
+    sprintf("\\caption{Complete runtime summaries for the four simulation settings. Case~1 = LLQR (Gaussian design), Case~2 = LLQR (Uniform design), Case~3 = TVCQR (i.i.d. design), and Case~4 = TVCQR (dependent design). Entries report the Monte Carlo mean computation time and range (max--min), in seconds, over $%d$ replications.}\\label{tab:runtime_full}\\\\", replications),
     "\\toprule",
     "Case & $\\tau$ & Method & \\multicolumn{2}{c}{$n=200$} & \\multicolumn{2}{c}{$n=500$} & \\multicolumn{2}{c}{$n=1000$} & \\multicolumn{2}{c}{$n=2000$} & \\multicolumn{2}{c}{$n=5000$}\\\\",
     "\\cmidrule(lr){4-5}\\cmidrule(lr){6-7}\\cmidrule(lr){8-9}\\cmidrule(lr){10-11}\\cmidrule(lr){12-13}",
@@ -178,12 +184,11 @@ emit_longtable <- function(dat) {
     "\\endfoot",
     "\\bottomrule",
     "\\endlastfoot"
-  ), con)
+  )
 
   tau_order <- c(0.2, 0.5, 0.8)
   for (case_id in 1:4) {
     case_block <- dat[dat$case_id == case_id, ]
-    baseline <- baseline_map[[as.character(case_id)]]
     method_order <- if (case_id <= 2) {
       c("llqr", "seq", "seq(ft)", "screen-seq(1)", "screen-seq(2)", "screen-seq(1)(ft)", "screen-seq(2)(ft)")
     } else {
@@ -210,17 +215,32 @@ emit_longtable <- function(dat) {
           c(case_cell, tau_cell, method, numeric_cells),
           collapse = " & "
         )
-        writeLines(paste0(line, "\\\\"), con)
+        lines <- c(lines, paste0(line, "\\\\"))
 
         first_case_row <- FALSE
         first_tau_row <- FALSE
       }
-      writeLines("\\midrule", con)
+      lines <- c(lines, "\\midrule")
     }
   }
 
-  writeLines(c("\\end{longtable}", "\\endgroup"), con)
+  c(lines, "\\end{longtable}", "\\endgroup")
+}
+
+emit_longtable <- function(active_dat, backup_dat) {
+  output_path <- file.path(generated_dir, "runtime_summary_longtable.tex")
+  con <- file(output_path, open = "w")
+  on.exit(close(con), add = TRUE)
+
+  active_lines <- format_longtable_lines(active_dat, replications = 100L)
+  backup_lines <- format_longtable_lines(backup_dat, replications = 1000L)
+  commented_backup <- c(
+    "% Previous runtime summaries over 1000 replications are retained below for reference only.",
+    vapply(backup_lines, function(x) paste0("% ", x), character(1))
+  )
+
+  writeLines(c(active_lines, "", commented_backup), con)
 }
 
 build_main_figure(runtime)
-emit_longtable(runtime)
+emit_longtable(runtime, runtime_backup)
