@@ -5,14 +5,14 @@
 ! or: gfortran -shared -fPIC -o tvcqr_seq_M_acc.so tvcqr_seq_M_acc.f90 -llapack -lblas
 
 subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
-                                   bland_int, Mm_factor, eps, &
+                                   bland_int, Mm_factor, eps, store_residual_int, &
                                    theta_ll_est, it_num, residual_est, &
                                    M_out, n_sub, H_seq, ierr)
     
     implicit none
     
     ! Input arguments
-    integer, intent(in) :: m, nvar, maxit, bland_int
+    integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int
     double precision, intent(in) :: x(m, nvar), y(m), tau, tol, h_factor
     double precision, intent(in) :: Mm_factor, eps
     double precision, intent(inout) :: h
@@ -73,13 +73,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     
     double precision :: yy(m+3), ee(m+3), k_vals(m+3)
     double precision :: u(m), v(m), estimate(2*(nvar+1))
-    double precision :: r(m)
+    double precision :: r(m), r_prev(m)
     double precision :: pivot_row(2*(nvar+1))
     
     integer :: i, j, k, t, eva_t, iter
     integer :: t_rr, tsep
     double precision :: rrl, min_k, temp_sum
-    logical :: bland
+    logical :: bland, store_residual
     double precision :: b_k_original
     logical :: not_optimal, not_new_sl_sh, debug_active
     integer :: bad_signs, n_sl, n_sh, n_sure_signs
@@ -137,6 +137,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     
     ! Convert integer to logical for bland
     bland = (bland_int /= 0)
+    store_residual = (store_residual_int /= 0)
     max_empty_pivot_retries = 3
     res_tol = 1.0d-8
     
@@ -185,7 +186,11 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     ! Initialize outputs
     it_num = 0
     theta_ll_est = 0.0d0
-    residual_est = 0.0d0
+    if (store_residual) then
+        residual_est = 0.0d0
+    else
+        residual_est(1, 1) = 0.0d0
+    end if
     n_sub = 0
     H_seq = 0
     M_out = 0.0d0
@@ -517,7 +522,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     end do
     
     do i = 1, m
-        residual_est(1, i) = u(i) - v(i)
+        r_prev(i) = u(i) - v(i)
+        if (store_residual) then
+            residual_est(1, i) = r_prev(i)
+        end if
     end do
 
 
@@ -563,14 +571,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-
-        ! Also activate if we're getting large residuals (sign of divergence)
-        if (eva_t > 2) then
-            if (maxval(abs(residual_est(eva_t-1, :))) > 10.0d0) then
-                write(6, *) 'WARNING: Large residuals detected at eva_t=', eva_t
-                debug_active = .true.
-            end if
-        end if
 
         if (debug_active) then
             write(6, *) ''
@@ -622,7 +622,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             end if
             ! Get residuals from previous time
             do i = 1, m
-                r(i) = residual_est(eva_t - 1, i)
+                r(i) = r_prev(i)
             end do
             
 
@@ -2185,7 +2185,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 
                 ! First, find all valid ratios
                 do i = 1, ms
-                    if (yy(i) > tol .and. .not. freevarrow(i)) then
+                    if (yy(i) > 0.0d0 .and. .not. freevarrow(i)) then
                         k_vals(i) = bs(i) / yy(i)
                         if (k_vals(i) < min_k) then  !k_vals(i) >= -tol .and.
                             min_k = k_vals(i)
@@ -2217,6 +2217,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
      
                     empty_pivot_count = empty_pivot_count + 1
+                    if (empty_pivot_count >= 2) then
+                        ierr = 31
+                        return
+                    end if
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -2263,7 +2267,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     ! Show details for non-free variables with positive yy
                     write(6, *) '  Non-free vars with yy > 0:'
                     do i = 1, ms
-                        if (.not. freevarrow(i) .and. yy(i) > tol) then
+                        if (.not. freevarrow(i) .and. yy(i) > 0.0d0) then
                             write(6, '(A,I3,A,F12.6,A,F12.6,A,F12.6,A,I6)') &
                                 '    Row ', i, ': yy=', yy(i), ', bs=', bs(i), &
                                 ', ratio=', bs(i)/yy(i), ', IBs=', IBs(i)
@@ -2274,7 +2278,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     write(6, *) '  Non-free vars with yy > 0 but bs < 0 (infeasible):'
                     k = 0
                     do i = 1, ms
-                        if (.not. freevarrow(i) .and. yy(i) > tol .and. bs(i) < 0.0d0) then
+                        if (.not. freevarrow(i) .and. yy(i) > 0.0d0 .and. bs(i) < 0.0d0) then
                             k = k + 1
                             if (k <= 5) then  ! Show first 5
                                 write(6, '(A,I3,A,F12.6,A,F12.6)') &
@@ -2560,7 +2564,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 if (bad_signs > int(0.1d0 * dble(ms))) then
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
-                    write(6, *) 'Too many fixups: doubling m at time', eva_t
                 else
                     ! Fix bad signs ONLY when bad_signs <= 0.1*ms
                     do i = 1, m
@@ -2572,7 +2575,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                         end if
                     end do
                     not_new_sl_sh = .false.
-                    write(6, *) 'Some fixups: fixing at time', eva_t
 
 
 
@@ -2736,12 +2738,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         do j = 1, nvar+1
             theta_ll_est(eva_t, j) = estimate(j) + (dble(eva_t)/dble(m)) * estimate(nvar+1+j)
         end do
-        
-
-        ! Compute theta_ll_est for current eva_t
-        do j = 1, nvar+1
-            theta_ll_est(eva_t, j) = estimate(j) + (dble(eva_t)/dble(m)) * estimate(nvar+1+j)
-        end do
 
         ! DEBUG: Show estimates at problem times
 
@@ -2758,11 +2754,11 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-        ! Store residuals
         do i = 1, m
-
-
-            residual_est(eva_t, i) = r(i)
+            r_prev(i) = r(i)
+            if (store_residual) then
+                residual_est(eva_t, i) = r(i)
+            end if
         end do
 
 
@@ -2937,29 +2933,71 @@ contains
     end subroutine matrix_inverse_2p
 
 
+    recursive subroutine quicksort_real(arr, left, right)
+        implicit none
+        double precision, intent(inout) :: arr(:)
+        integer, intent(in) :: left, right
+        integer :: i, j
+        double precision :: pivot, temp
+
+        if (left >= right) return
+        if (right - left <= 16) then
+            call insertion_sort_real(arr, left, right)
+            return
+        end if
+
+        pivot = arr((left + right) / 2)
+        i = left
+        j = right
+
+        do
+            do while (arr(i) < pivot)
+                i = i + 1
+            end do
+            do while (arr(j) > pivot)
+                j = j - 1
+            end do
+            if (i <= j) then
+                temp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = temp
+                i = i + 1
+                j = j - 1
+            end if
+            if (i > j) exit
+        end do
+
+        if (left < j) call quicksort_real(arr, left, j)
+        if (i < right) call quicksort_real(arr, i, right)
+    end subroutine quicksort_real
+
+    subroutine insertion_sort_real(arr, left, right)
+        implicit none
+        double precision, intent(inout) :: arr(:)
+        integer, intent(in) :: left, right
+        integer :: i, j
+        double precision :: value
+
+        do i = left + 1, right
+            value = arr(i)
+            j = i - 1
+            do while (j >= left .and. arr(j) > value)
+                arr(j + 1) = arr(j)
+                j = j - 1
+            end do
+            arr(j + 1) = value
+        end do
+    end subroutine insertion_sort_real
+
     double precision function median_value(arr, n)
         implicit none
         integer, intent(in) :: n
         double precision, intent(in) :: arr(n)
         double precision :: sorted(n)
-        integer :: i, j
-        double precision :: temp
-        
-        ! Copy array
+
         sorted = arr
-        
-        ! Simple bubble sort (okay for small arrays)
-        do i = 1, n-1
-            do j = 1, n-i
-                if (sorted(j) > sorted(j+1)) then
-                    temp = sorted(j)
-                    sorted(j) = sorted(j+1)
-                    sorted(j+1) = temp
-                end if
-            end do
-        end do
-        
-        ! Return median
+        call quicksort_real(sorted, 1, n)
+
         if (mod(n, 2) == 0) then
             median_value = 0.5d0 * (sorted(n/2) + sorted(n/2 + 1))
         else

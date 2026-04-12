@@ -91,7 +91,8 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
                                        tol = config$tol, maxit = config$maxit, 
                                        bland = config$bland, 
                                        Mm.factor = Mm_factor_local, 
-                                       eps = config$eps)
+                                       eps = config$eps,
+                                       store_residual = FALSE)
       }
     })
   }

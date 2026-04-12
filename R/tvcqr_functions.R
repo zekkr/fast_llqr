@@ -774,7 +774,7 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       residual_est[t_start:m, ] <<- seq_fit$residual_est[t_start:m, , drop = FALSE]
     }
     n_sub[t_start:m] <<- m
-    H_seq[t_start:m, ] <<- NA_real_
+    H_seq[t_start:m, ] <<- seq_fit$H_seq[t_start:m, , drop = FALSE]
 
     return(list(
       theta_ll_est = theta_ll_est,
@@ -1271,7 +1271,8 @@ tvcqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, tol = 1e-14,
 # ============================================================================ #
 tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, 
                                            tol = 1e-14, maxit = 1e6, bland = FALSE, 
-                                           Mm.factor = 1e-4, eps = 1e-06) {
+                                           Mm.factor = 1e-4, eps = 1e-06,
+                                           store_residual = TRUE) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1317,7 +1318,7 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # These arrays will be filled by the Fortran subroutine
   theta_ll_est <- matrix(0.0, nrow = m, ncol = nvar + 1)
   it_num <- integer(m)
-  residual_est <- matrix(0.0, nrow = m, ncol = m)
+  residual_est <- if (isTRUE(store_residual)) matrix(0.0, nrow = m, ncol = m) else 0.0
   M_out <- 0.0
   n_sub <- integer(m)
   H_seq <- matrix(0L, nrow = m, ncol = 2 * (nvar + 1))
@@ -1338,6 +1339,7 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      bland_int = as.integer(bland),       # Convert logical to integer
                      Mm_factor = as.double(Mm.factor),    
                      eps = as.double(eps),                
+                     store_residual_int = as.integer(isTRUE(store_residual)),
                      # Output arguments - pre-allocated arrays
                      theta_ll_est = as.double(theta_ll_est),
                      it_num = as.integer(it_num),
@@ -1361,13 +1363,20 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     )
     fallback$M <- NA_real_
     fallback$n_sub <- rep(m, m)
+    if (!isTRUE(store_residual)) {
+      fallback$residual_est <- NULL
+    }
     return(fallback)
   }
   
   # Reshape the flattened arrays back to matrices
   # Fortran stores matrices in column-major order, same as R
   theta_ll_est <- matrix(result$theta_ll_est, nrow = m, ncol = nvar + 1, byrow = FALSE)
-  residual_est <- matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
+  residual_est <- if (isTRUE(store_residual)) {
+    matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
+  } else {
+    NULL
+  }
   H_seq <- matrix(result$H_seq, nrow = m, ncol = 2 * (nvar + 1), byrow = FALSE)
   
   # Return a named list with all results
