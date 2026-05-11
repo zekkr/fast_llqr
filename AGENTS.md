@@ -14,34 +14,36 @@ The `quantreg`/`quantdr`-based solvers (`llqr`, `tvc_rq`) are baseline/oracle so
 
 Do not replace a ppro implementation by a seq implementation.
 
-## Algorithm contract
+## Contract documents
 
-The screened sequential ppro solvers must implement:
+Do not restate algorithm, testing, or debugging rules in this file.
 
-1. Solve the first evaluation point on the full sample.
-2. For each next evaluation point:
-   - use previous residuals to form sure-negative `sl`, sure-positive `sh`,
-     and uncertain set `S`;
-   - force previous H/basis observations into `S`;
-   - build weighted aggregates at the current evaluation point:
-     - sure-positive residual group uses an `u_H` aggregate and objective `tau`;
-     - sure-negative residual group uses a `v_L` aggregate and objective `1 - tau`;
-   - build and solve the reduced simplex problem;
-   - verify all omitted observations for sign violations;
-   - if violations occur, add bad signs back to `S` or enlarge threshold and re-solve;
-   - in the worst case, solve the full sample.
-3. Never silently accept an unconverged reduced LP.
-4. Never silently fall back to seq. If fallback is used, return and report
-   `fallback_triggered = TRUE` and `returned_backend = "seq_fallback"`.
+The source-of-truth documents are:
 
-## Correctness definitions
+- `docs/algorithm_contract.md` for screened ppro algorithm invariants;
+- `docs/testing_contract.md` for correctness levels, regression gates, fallback accounting, and command templates;
+- `docs/debugging_playbook.md` for H_seq mismatch and fallback debugging workflow;
+- `docs/codex_task_template.md` for task-specific prompt templates.
 
-Report these separately:
-- objective/KKT exactness;
-- estimate match against seq;
-- H_seq set match against seq.
+## Task-mode discipline
 
-For current regression tests, H_seq set equality against seq is required.
+At the start of every task, identify the task mode:
+
+- plan only;
+- diagnosis only;
+- implementation after approval;
+- test only;
+- Fortran-specific bugfix;
+- R wrapper/certificate task;
+- paper/documentation task.
+
+If the task says **plan only**, do not modify, create, delete, rename, format, or patch any file. Produce only the requested plan.
+
+If the task says **diagnosis only**, do not implement a fix unless a follow-up implementation task explicitly approves it.
+
+If the task says **implementation after approval**, edit only the files explicitly allowed by the prompt.
+
+If the task scope is ambiguous, prefer a narrow plan or diagnosis over broad edits.
 
 ## Do-not rules
 
@@ -51,23 +53,53 @@ For current regression tests, H_seq set equality against seq is required.
 - Do not remove diagnostics that distinguish ppro from seq fallback.
 - Do not edit `paper/main_v3.tex` unless the task is explicitly about the paper.
 
-## Files to inspect before editing
+## File inspection rule
+
+Inspect only files relevant to the current task.
+
+For ppro algorithm changes, the usual core files are:
 
 - `R/llqr_functions.R`
 - `R/tvcqr_functions.R`
 - `src/fortran/llqr_ppro.f90`
 - `src/fortran/tvcqr_seq_M_acc.f90`
+
+For H_seq regression or fallback accounting, the usual diagnostic file is:
+
 - `scripts/check_hseq_set_match.R`
 
-## Verification expectations
+For documentation-only, plan-only, or paper-only tasks, do not inspect implementation files unless needed for the requested plan.
 
-Before proposing a code change, explain:
-- which algorithm invariant is being changed or preserved;
-- which files and functions are affected;
-- how the change will be tested.
+## Code-change reporting floor
 
-After changing code, report:
-- exact commands run;
-- exact test outcomes;
-- whether any fallback occurred;
-- whether H_seq set match passed.
+For any task that proposes or implements a code change, the response must state:
+
+Before implementation:
+- which contract rule is being preserved, changed, or relied on;
+- which files and functions are expected to be affected;
+- how the change will be validated.
+
+After implementation:
+- exact commands run, or `not run` with the reason;
+- exact test outcomes, not just "passed";
+- whether fallback occurred, or `not applicable`;
+- whether `H_seq` row-set match passed when ppro/H_seq behavior is touched, or `not applicable`.
+
+Detailed algorithm rules belong in `docs/algorithm_contract.md`.
+Detailed validation rules belong in `docs/testing_contract.md`.
+Task-specific report formats belong in `docs/codex_task_template.md`.
+
+## Source-of-truth map
+
+Use this map to avoid duplicated or conflicting instructions:
+
+| Topic | Source of truth |
+|---|---|
+| ppro must not call seq except explicit fallback | `docs/algorithm_contract.md` |
+| `sl`, `sh`, `S`, bad signs, H/basis observations | `docs/algorithm_contract.md` |
+| aggregate recomputation and verification failure handling | `docs/algorithm_contract.md` |
+| fallback fields and fallback accounting | `docs/testing_contract.md` |
+| correctness levels and active regression gate | `docs/testing_contract.md` |
+| H_seq mismatch debugging workflow | `docs/debugging_playbook.md` |
+| command templates and regression grids | `docs/testing_contract.md` |
+| task prompt formats | `docs/codex_task_template.md` |
