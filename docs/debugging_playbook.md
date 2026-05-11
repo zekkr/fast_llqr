@@ -2,6 +2,18 @@
 
 Use this workflow when a screened ppro method has an `H_seq` mismatch against the corresponding stable seq method.
 
+## Scope
+
+Use this playbook when a screened ppro method has one of the following symptoms:
+
+- `H_seq` mismatch against the corresponding stable seq method;
+- estimate mismatch after ppro screening;
+- unexpected fallback;
+- missing or malformed fallback status;
+- suspected stale aggregate, stale residual, or invalid warm start.
+
+This document is a debugging workflow, not an implementation contract. Algorithm invariants belong in `docs/algorithm_contract.md`; diagnostic output fields belong in `docs/testing_contract.md`.
+
 ## Workflow
 
 1. Reproduce the smallest failing case: model, case, `n`, `tau`, seed, method name, `Mm.factor`, evaluation index, and backend.
@@ -31,42 +43,26 @@ Accepting nonconverged simplex states: A reduced solve that reaches `maxit`, has
 
 Zero-weight observations: Local kernels can produce zero weights. Confirm zero-weight rows do not enter aggregates or basis comparisons in a way that changes the effective LP.
 
+Bounded-kernel positive-support degeneracy: For LLQR bounded-kernel cases, record `sum(w > 0)`, `which(w > 0)`, `qr(A[w > 0, , drop = FALSE])$rank`, `h`, `case`, `seed`, and the traceback line at the first failing `rd`. If the positive-weight count is below `q` or the positive-weight design rank is below `q`, diagnose a full-sample local LP degeneracy before attributing the failure to `Mm.factor`, screening, or `H_seq` mismatch.
+
 Tolerance and tie-breaking differences: Compare tolerances, Bland-rule settings, pivot tie handling, and near-zero residual classification. A row near the threshold should be treated as uncertain rather than certified.
 
 Fortran wrapper fallback hiding a kernel error: Wrappers must expose kernel status and fallback status. If `returned_backend = "seq_fallback"`, debug the kernel error first and do not count the run as ppro success.
 
-## Minimal Diagnostic Log
+## Diagnostic output
 
-Future code should print or return at least:
+For required diagnostic fields, see `docs/testing_contract.md#diagnostic-output-schema`.
 
-- `model`
-- `method`
-- `backend`
-- `case`
-- `n`
-- `tau`
-- `seed`
-- `rep_id`
-- `eval_index`
-- `h`
-- `Mm.factor`
-- `threshold`
-- `n_sl`
-- `n_sh`
-- `n_S`
-- `n_prev_H_forced`
-- `n_bad_signs`
-- `bad_sign_indices`
-- `bad_sign_classes`
-- `threshold_doubled`
-- `n_resolves`
-- `simplex_converged`
-- `it_num`
-- `ierr` or kernel status code
-- `fallback_triggered`
-- `fallback_reason`
-- `returned_backend`
-- `H_seq_ppro`
-- `H_seq_seq`
+## Stop conditions
 
-When logs are large, store full vectors in a structured object and print only counts plus the first few indices.
+Stop debugging and report a diagnosis when any of the following is identified:
+
+- the smallest failing configuration is found;
+- the first failing evaluation index is found;
+- fallback hides the original kernel error;
+- a stale aggregate, stale residual, stale threshold, or stale `S/sl/sh` update is confirmed;
+- previous H/basis observations are not forced into `S`;
+- a reduced LP is accepted despite nonconvergence;
+- the failure cannot be reproduced with the available scripts or data.
+
+Do not implement a fix from this playbook unless the current task explicitly allows implementation.
