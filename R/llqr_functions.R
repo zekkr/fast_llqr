@@ -6,12 +6,12 @@ generate_data <- function(n, case = 1, seed = NULL){
     set.seed(seed)
   }
 
-  if(case == 1){
+  case <- llqr_validate_case(case)
+  dgp_case <- if (case %in% c(3L, 4L)) case - 2L else case
+  if(dgp_case == 1){
     x <- rnorm(n)
-  } else if(case == 2){
+  } else if(dgp_case == 2){
     x <- runif(n)
-  } else {
-    stop("Invalid case specification. Use 1 or 2.")
   }
   
   error <- rnorm(n)
@@ -45,10 +45,244 @@ inv22 <- function(mat) {
 }
 
 # ============================================================================ #
+# LLQR case, kernel, and bandwidth helpers
+# ============================================================================ #
+llqr_validate_case <- function(case) {
+  case_num <- suppressWarnings(as.numeric(case))
+  if (length(case_num) != 1L || is.na(case_num) ||
+      !is.finite(case_num) || case_num != floor(case_num) ||
+      !(case_num %in% 1:4)) {
+    stop("Invalid LLQR case specification. Use 1, 2, 3, or 4.")
+  }
+  as.integer(case_num)
+}
+
+llqr_validate_h_factor <- function(h.factor) {
+  h.factor <- as.numeric(h.factor)
+  if (length(h.factor) != 1L || is.na(h.factor) ||
+      !is.finite(h.factor) || h.factor <= 0) {
+    stop("h.factor must be a positive finite scalar.")
+  }
+  h.factor
+}
+
+llqr_uses_epanechnikov <- function(case) {
+  llqr_validate_case(case) %in% c(3L, 4L)
+}
+
+llqr_kernel_weights <- function(u, case = 1) {
+  case <- llqr_validate_case(case)
+  u <- as.numeric(u)
+  if (case %in% c(3L, 4L)) {
+    w <- numeric(length(u))
+    inside <- abs(u) <= 1
+    w[inside] <- 0.75 * (1 - u[inside]^2)
+    return(w)
+  }
+  dnorm(u)
+}
+
+llqr_default_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor = 1) {
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
+  x <- as.matrix(x)
+  y <- as.matrix(y)
+  m <- nrow(x)
+  nvar <- ncol(x)
+
+  if (!is.null(h)) {
+    h <- as.numeric(h)
+    if (length(h) != 1L || is.na(h) || !is.finite(h) || h <= 0) {
+      stop("h must be a positive finite scalar when provided.")
+    }
+    return(h)
+  }
+
+  if (case %in% c(3L, 4L)) {
+    return(as.numeric(h.factor * m^(-0.2)))
+  }
+
+  red_dim <- floor(0.2 * m)
+  index_y <- order(y)[red_dim:(m - red_dim)]
+  h_val <- KernSmooth::dpill(x[index_y, , drop = FALSE], y[index_y])
+  h_val <- 1.25 * h_val * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
+  if (is.nan(h_val)) {
+    h_val <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
+  }
+  as.numeric(h_val)
+}
+
+llqr_threshold_scale <- function(m, case = 1) {
+  case <- llqr_validate_case(case)
+  if (case %in% c(1L, 3L)) {
+    return(log(log(m)) / sqrt(log(m)))
+  }
+  log(m)^(1/2) * m^(-2/5)
+}
+
+# ============================================================================ #
+# LLQR Candidate Certification Helpers
+# ============================================================================ #
+llqr_quantile_loss <- function(r, tau) {
+  r <- as.numeric(r)
+  r * (tau - (r < 0))
+}
+
+llqr_full_objective <- function(estimate, A, y, w, tau) {
+  estimate <- as.numeric(estimate)
+  A <- as.matrix(A)
+  y <- as.numeric(y)
+  w <- as.numeric(w)
+  r <- as.numeric(y - A %*% estimate)
+  sum(w * llqr_quantile_loss(r, tau))
+}
+
+llqr_set_equal_int <- function(x, y) {
+  x <- sort(unique(as.integer(x)))
+  y <- sort(unique(as.integer(y)))
+  identical(x, y)
+}
+
+llqr_estimate_from_local_linear <- function(ll_value, d_ll_value, z_value) {
+  c(as.numeric(ll_value) - as.numeric(z_value) * as.numeric(d_ll_value), as.numeric(d_ll_value))
+}
+
+llqr_classify_candidate <- function(cert) {
+  if (!isTRUE(cert$candidate_H_valid)) {
+    return("invalid_H")
+  }
+  if (!isTRUE(cert$candidate_in_zero_set)) {
+    return("H_not_in_zero_set")
+  }
+  "certified"
+}
+
+build_llqr_full_cert_record <- function(round, backend,
+                                        estimate_candidate, H_candidate,
+                                        A, y, w, tau,
+                                        baseline_estimate = NULL,
+                                        baseline_H = NULL,
+                                        residual_tol = 1e-8,
+                                        rank_tol = 1e-10,
+                                        obj_tol = 1e-10) {
+  cert <- certify_llqr_candidate_full(
+    estimate_candidate = estimate_candidate,
+    H_candidate = H_candidate,
+    A = A,
+    y = y,
+    w = w,
+    tau = tau,
+    baseline_estimate = baseline_estimate,
+    baseline_H = baseline_H,
+    residual_tol = residual_tol,
+    rank_tol = rank_tol,
+    obj_tol = obj_tol
+  )
+
+  list(
+    round = as.integer(round),
+    backend = backend,
+    estimate_candidate = as.numeric(estimate_candidate),
+    H_candidate = as.integer(H_candidate),
+    seq_H = if (!is.null(baseline_H)) as.integer(baseline_H) else NULL,
+    certification = cert,
+    candidate_class = llqr_classify_candidate(cert),
+    fallback_triggered = !isTRUE(cert$cert_ok),
+    obj_full = cert$obj_full,
+    obj_full_seq = cert$obj_full_seq,
+    obj_gap_vs_seq = cert$obj_gap_vs_seq,
+    H_recovered_from_full = cert$H_recovered_from_full,
+    h_set_match_vs_seq = cert$h_set_match_vs_seq
+  )
+}
+
+ensure_llqr_fortran_library_loaded <- function(lib_filename) {
+  lib_path <- file.path("src", "fortran", lib_filename)
+  loaded_paths <- vapply(getLoadedDLLs(), function(x) x[["path"]], character(1), USE.NAMES = FALSE)
+  if (!normalizePath(lib_path, winslash = "/", mustWork = FALSE) %in%
+      normalizePath(loaded_paths, winslash = "/", mustWork = FALSE)) {
+    if (!file.exists(lib_path)) {
+      stop(sprintf("Required Fortran library not found: %s", lib_path))
+    }
+    dyn.load(lib_path)
+  }
+}
+
+certify_llqr_candidate_full <- function(estimate_candidate, H_candidate, A, y, w, tau,
+                                        baseline_estimate = NULL, baseline_H = NULL,
+                                        residual_tol = 1e-8, rank_tol = 1e-10,
+                                        obj_tol = 1e-10) {
+  estimate_candidate <- as.numeric(estimate_candidate)
+  H_candidate <- as.integer(H_candidate)
+  A <- as.matrix(A)
+  y <- as.numeric(y)
+  w <- as.numeric(w)
+
+  p <- ncol(A)
+  r <- as.numeric(y - A %*% estimate_candidate)
+  zero_idx <- which(abs(r) <= residual_tol)
+
+  candidate_H_in_range <- length(H_candidate) == p &&
+    !anyNA(H_candidate) &&
+    !any(H_candidate < 1L | H_candidate > nrow(A)) &&
+    !anyDuplicated(H_candidate)
+  candidate_rank_ok <- candidate_H_in_range &&
+    (qr(A[H_candidate, , drop = FALSE], tol = rank_tol)$rank == p)
+  candidate_zero_ok <- candidate_H_in_range &&
+    all(abs(r[H_candidate]) <= residual_tol)
+  candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
+  candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
+
+  obj_full <- llqr_full_objective(
+    estimate = estimate_candidate,
+    A = A,
+    y = y,
+    w = w,
+    tau = tau
+  )
+  obj_full_seq <- if (!is.null(baseline_estimate)) {
+    llqr_full_objective(
+      estimate = baseline_estimate,
+      A = A,
+      y = y,
+      w = w,
+      tau = tau
+    )
+  } else {
+    NA_real_
+  }
+  obj_gap_vs_seq <- if (is.finite(obj_full_seq)) obj_full - obj_full_seq else NA_real_
+  obj_ok_vs_seq <- if (is.finite(obj_gap_vs_seq)) obj_gap_vs_seq <= obj_tol else NA
+
+  h_set_match_vs_seq <- if (!is.null(baseline_H)) {
+    llqr_set_equal_int(H_candidate, baseline_H)
+  } else {
+    NA
+  }
+
+  cert_ok <- candidate_H_valid && candidate_in_zero_set
+
+  list(
+    cert_ok = cert_ok,
+    obj_full = obj_full,
+    obj_full_seq = obj_full_seq,
+    obj_gap_vs_seq = obj_gap_vs_seq,
+    obj_ok_vs_seq = obj_ok_vs_seq,
+    H_recovered_from_full = zero_idx,
+    candidate_H_valid = candidate_H_valid,
+    candidate_in_zero_set = candidate_in_zero_set,
+    h_set_match_vs_seq = h_set_match_vs_seq,
+    residual = r
+  )
+}
+
+# ============================================================================ #
 # Sequential algorithm for one-dim Local linear quantile regression
 # ============================================================================ #
 llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
-                         bland = F, track_order = F){
+                         bland = F, track_order = F, case = 1, h.factor = 1){
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -68,20 +302,11 @@ llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1
   nvar <- ncol(x) # number of var
   rounds <- nrow(z) # number of evaluation points
   
-  if (is.null(h)) {
-    # choosing bandwidth using rule of thumb in Yu and Jones 1998.
-    red_dim <- floor(0.2 * m) # Rounding of Numbers
-    index_y <- order(y)[red_dim:(m - red_dim)] # increasing = TRUE
-    h <- KernSmooth::dpill(x[index_y, ], y[index_y]) # bugs exist when multivariate case
-    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
-    if (h == "NaN") {
-      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
-    }
-  }
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
   
   
   eva_z <- z[1] - x
-  w <- dnorm(eva_z/h)
+  w <- llqr_kernel_weights(eva_z / h, case = case)
   cc <- c(rep(0, 1+nvar), tau*w, (1-tau)*w)
   
   # A matrix, b matrix
@@ -108,7 +333,7 @@ llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1
   for (rd in 1:rounds){
     if (rd>=2){
       eva_z <- z[rd] - x
-      w <- dnorm(eva_z/h)
+      w <- llqr_kernel_weights(eva_z / h, case = case)
       
       cc[(2+nvar):(1+nvar+m)] <- tau*w
       cc[(2+nvar+m):(1+nvar+2*m)] <- (1-tau)*w
@@ -281,7 +506,9 @@ llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1
 # ============================================================================ #
 #Local linear quantile regression for one-dim predictors 
 llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3, 
-                      track_order = F, case = 1, pmethod = NULL){
+                      track_order = F, case = 1, h.factor = 1, pmethod = NULL){
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -301,23 +528,10 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
   nvar <- ncol(x) # number of var
   rounds <- nrow(z) # number of evaluation points
   
-  if (is.null(h)) {
-    # choosing bandwidth using rule of thumb in Yu and Jones 1998.
-    red_dim <- floor(0.2 * m) # Rounding of Numbers
-    index_y <- order(y)[red_dim:(m - red_dim)] # increasing = TRUE
-    h <- KernSmooth::dpill(x[index_y, ], y[index_y]) 
-    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
-    if (h == "NaN") {
-      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
-    }
-  }
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
-  if (case == 1){
-    mm <- log(log(m))/sqrt(log(m))
-  } else if (case == 2) {
-    mm <-  log(m)^(1/2) * m^{-2/5}
-  }
+  mm <- llqr_threshold_scale(m = m, case = case)
   
   # initialize the output
   ll_est <- rep(0,rounds)
@@ -327,7 +541,7 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
   # Initial estimation at the first evaluation point
   eva_z <- z[1] - x
   xx <- cbind(matrix(1, nrow = m, ncol = 1), eva_z) # n*(p+1)
-  w <- dnorm(eva_z/h)
+  w <- llqr_kernel_weights(eva_z / h, case = case)
   wxx <- apply(xx, 2, function(x) x * w)
   wy <- y * w
   row_all_zero_x <- apply(wxx, 1, function(z) all(z == 0))
@@ -354,7 +568,7 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
     not_new_sl_sh <- TRUE
     mmm <- mm
     eva_z <- z[rd] - x
-    w <- dnorm(eva_z/h)
+    w <- llqr_kernel_weights(eva_z / h, case = case)
     xx <- cbind(matrix(1, nrow = m, ncol = 1), eva_z) # n*(p+1)
     wxx <- apply(xx, 2, function(x) x * w)
     wy <- y * w
@@ -436,8 +650,12 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
 # ============================================================================ #
 llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
                               Mm.factor = 1, bland = F, track_order = F, 
-                              case = 1, min_subsample_size = NULL,
-                              store_residual = FALSE){
+                              case = 1, h.factor = 1, min_subsample_size = NULL,
+                              store_residual = FALSE,
+                              fallback = FALSE,
+                              debug_trace = FALSE, debug_rounds = NULL){
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
   # x must be one-dimensional
   x <- as.matrix(x)
   y <- as.matrix(y)
@@ -457,21 +675,12 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   nvar <- ncol(x) # number of var
   rounds <- nrow(z) # number of evaluation points
   
-  if (is.null(h)) {
-    # choosing bandwidth using rule of thumb in Yu and Jones 1998.
-    red_dim <- floor(0.2 * m) # Rounding of Numbers
-    index_y <- order(y)[red_dim:(m - red_dim)] # increasing = TRUE
-    h <- KernSmooth::dpill(x[index_y, ], y[index_y]) 
-    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
-    if (h == "NaN") {
-      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
-    }
-  }
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
   
   if (is.null(min_subsample_size)){
     min_subsample_size <- max(5 * (nvar + 1), ceiling(0.2 * m))
   }
-  residual_tol <- 1e-8
+  residual_tol <- 1e-6
   rank_tol <- 1e-10
   max_empty_pivot_retries <- 3L
 
@@ -493,14 +702,10 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   
   x.norms <- apply(x, 1, function(row) sqrt(sum(row^2)))
   #mm <- sqrt(log(m)) * (1 / sqrt(m * h) + h^2) * max(x.norms)
-  if (case == 1){
-    mm <- log(log(m))/sqrt(log(m))
-  } else if (case == 2) {
-    mm <-  log(m)^(1/2) * m^{-2/5}
-  }
+  mm <- llqr_threshold_scale(m = m, case = case)
   
   eva_z <- z[1] - x
-  w <- dnorm(eva_z/h)
+  w <- llqr_kernel_weights(eva_z / h, case = case)
   cc <- c(rep(0, 1+nvar), tau*w, (1-tau)*w)
   
   # A matrix, b matrix
@@ -525,11 +730,165 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
   ll_est <- rep(0,rounds)
   d_ll_est <- rep(0,rounds)
   # Optional residual-history storage: keeping all m x m residuals is O(m^2) memory.
-  residual_est <- if (store_residual) matrix(0, nrow = m, ncol = m) else NULL
+  residual_est <- if (store_residual) matrix(0, nrow = rounds, ncol = m) else NULL
+  acceptance_diagnostics <- vector("list", rounds)
+  first_failed_eval <- NA_integer_
+  failure_reason <- NULL
+  failure_info <- NULL
+  debug_round_mask <- rep(FALSE, rounds)
+  if (debug_trace) {
+    if (is.null(debug_rounds)) {
+      debug_round_mask[] <- TRUE
+    } else {
+      debug_rounds <- unique(as.integer(debug_rounds))
+      debug_rounds <- debug_rounds[!is.na(debug_rounds)]
+      debug_rounds <- debug_rounds[debug_rounds >= 1L & debug_rounds <= rounds]
+      debug_round_mask[debug_rounds] <- TRUE
+    }
+  }
+  round_debug <- if (debug_trace) vector("list", rounds) else NULL
+  init_round_debug <- function(rd) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    round_debug[[rd]] <<- list(
+      round = rd,
+      attempts = list(),
+      final_status = "pending"
+    )
+  }
+  append_round_attempt <- function(rd, attempt_info) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    if (is.null(round_debug[[rd]])) {
+      init_round_debug(rd)
+    }
+    round_debug[[rd]]$attempts[[length(round_debug[[rd]]$attempts) + 1L]] <<- attempt_info
+  }
+  finalize_round_debug <- function(rd, status, info = list()) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    if (is.null(round_debug[[rd]])) {
+      init_round_debug(rd)
+    }
+    round_debug[[rd]]$final_status <<- status
+    if (length(info) > 0L) {
+      for (nm in names(info)) {
+        round_debug[[rd]][[nm]] <<- info[[nm]]
+      }
+    }
+  }
   r_prev <- rep(0, m)
-  n_sub <- rep(0, m)
-  H_seq <- matrix(0, nrow = m, ncol = nvar+1)
+  n_sub <- rep(0, rounds)
+  H_seq <- matrix(0L, nrow = rounds, ncol = nvar+1)
   n_sub[1] <- m
+
+  make_return <- function(returned_backend,
+                          fallback_triggered = FALSE,
+                          fallback_reason = NULL,
+                          M_value = NA_real_) {
+    ll_est_out <- ll_est
+    d_ll_est_out <- d_ll_est
+    if (track_order) {
+      ll_est_out <- ll_est_out[order(original_order)]
+      d_ll_est_out <- d_ll_est_out[order(original_order)]
+    }
+
+    list(
+      ll_est = ll_est_out,
+      d_ll_est = d_ll_est_out,
+      it_num = it_num,
+      residual_est = residual_est,
+      h = h,
+      M = M_value,
+      n_sub = n_sub,
+      H_seq = H_seq,
+      acceptance_diagnostics = acceptance_diagnostics,
+      round_debug = round_debug,
+      first_failed_eval = first_failed_eval,
+      failure_reason = failure_reason,
+      failure_info = failure_info,
+      fallback_triggered = fallback_triggered,
+      fallback_reason = fallback_reason,
+      returned_backend = returned_backend
+    )
+  }
+
+  fail_ppro_suffix <- function(rd_start, reason, info = NULL, current_M = NA_real_) {
+    first_failed_eval <<- as.integer(rd_start)
+    failure_reason <<- reason
+    failure_info <<- info
+    idx <- rd_start:rounds
+    ll_est[idx] <<- NA_real_
+    d_ll_est[idx] <<- NA_real_
+    it_num[idx] <<- NA_integer_
+    n_sub[idx] <<- NA_integer_
+    H_seq[idx, ] <<- NA_integer_
+    if (store_residual) {
+      residual_est[idx, ] <<- NA_real_
+    }
+    if (is.null(acceptance_diagnostics[[rd_start]])) {
+      acceptance_diagnostics[[rd_start]] <<- list(
+        round = as.integer(rd_start),
+        reason = reason,
+        M = current_M,
+        info = info
+      )
+    }
+    finalize_round_debug(
+      rd = rd_start,
+      status = paste0("ppro_failed_", reason),
+      info = list(failure_info = info)
+    )
+    make_return(returned_backend = "ppro_failed", M_value = current_M)
+  }
+
+  finish_with_seq_fallback <- function(rd_start, failure_reason_arg, failure_info_arg = NULL) {
+    first_failed_eval <<- as.integer(rd_start)
+    failure_reason <<- failure_reason_arg
+    failure_info <<- failure_info_arg
+    fallback_maxit <- max(as.numeric(maxit), 1e6)
+    seq_fit <- llqr_seq(
+      x = x,
+      y = y,
+      tau = tau,
+      z = z,
+      h = h,
+      tol = tol,
+      maxit = fallback_maxit,
+      bland = bland,
+      case = case,
+      h.factor = h.factor,
+      track_order = FALSE
+    )
+
+    ll_est <<- as.numeric(seq_fit$ll_est[seq_len(rounds)])
+    d_ll_est <<- as.numeric(seq_fit$d_ll_est[seq_len(rounds)])
+    it_num <<- as.integer(seq_fit$it_num[seq_len(rounds)])
+    n_sub <<- rep.int(m, rounds)
+    H_seq <<- matrix(as.integer(seq_fit$H_seq[seq_len(rounds), , drop = FALSE]),
+                    nrow = rounds, ncol = nvar + 1)
+    if (store_residual) {
+      residual_est <<- matrix(NA_real_, nrow = rounds, ncol = m)
+      z_values <- as.numeric(z)
+      for (i in seq_len(rounds)) {
+        beta <- llqr_estimate_from_local_linear(
+          ll_value = ll_est[i],
+          d_ll_value = d_ll_est[i],
+          z_value = z_values[i]
+        )
+        residual_est[i, ] <<- as.numeric(y) - as.numeric(cbind(1, x) %*% beta)
+      }
+    }
+    make_return(
+      returned_backend = "seq_fallback",
+      fallback_triggered = TRUE,
+      fallback_reason = failure_reason_arg,
+      M_value = NA_real_
+    )
+  }
   
   ## rd =1 
   {
@@ -662,7 +1021,11 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     }
     
     if (j==maxit){
-      warning('Not converge')
+      info <- list(round = rd, maxit = maxit, stage = "initial_full_sample")
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(rd, "maxit", info))
+      }
+      return(fail_ppro_suffix(rd, "maxit", info, current_M = NA_real_))
     }
     it_num[rd] <- j
     
@@ -692,62 +1055,41 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     }
     H <- r1 - 1 - nvar
     H_seq[1, ] <- H
+    finalize_round_debug(
+      rd = 1L,
+      status = "initial_full_sample",
+      info = list(
+        H_prev = NA_integer_,
+        H_final = H,
+        estimate = as.numeric(estimate),
+        residual = as.numeric(r_prev),
+        ll_est = ll_est[1],
+        d_ll_est = d_ll_est[1],
+        n_sub = m
+      )
+    )
   }
   
   # we use a big (n+2) rows gammax to store the gammaxs
   gammaxs.temp <- matrix(NA, nrow = m + 2, ncol = nvar + 1)
   bs.temp <- rep(NA, m + 2)
 
-  finish_with_seq_fallback <- function(rd_start, current_M) {
-    seq_fit <- llqr_seq(
-      x = x,
-      y = y,
-      tau = tau,
-      z = z[rd_start:rounds, , drop = FALSE],
-      h = h,
-      tol = tol,
-      maxit = maxit,
-      track_order = FALSE
-    )
-
-    ll_est[rd_start:rounds] <<- seq_fit$ll_est
-    d_ll_est[rd_start:rounds] <<- seq_fit$d_ll_est
-    it_num[rd_start:rounds] <<- NA_real_
-    if (store_residual) {
-      residual_est[rd_start:rounds, ] <<- seq_fit$residual_est
-    }
-    n_sub[rd_start:rounds] <<- m
-    H_seq[rd_start:rounds, ] <<- NA_real_
-
-    if (track_order) {
-      ll_est <<- ll_est[order(original_order)]
-      d_ll_est <<- d_ll_est[order(original_order)]
-    }
-
-    return(list(
-      ll_est = ll_est,
-      d_ll_est = d_ll_est,
-      it_num = it_num,
-      residual_est = residual_est,
-      h = h,
-      M = current_M,
-      n_sub = n_sub,
-      H_seq = H_seq
-    ))
-  }
-  
   for (rd in 2:rounds){
     # print(rd)
     not_optimal <- TRUE
     not_new_sl_sh <- TRUE
     force_full_sample <- FALSE
     empty_pivot_count <- 0L
+    attempt_counter <- 0L
     eva_z <- z[rd] - x
-    w <- dnorm(eva_z/h)
+    w <- llqr_kernel_weights(eva_z / h, case = case)
     mmm <- mm
+    M <- NA_real_
+    init_round_debug(rd)
     
     j <- 0
     while (not_optimal) {
+      attempt_counter <- attempt_counter + 1L
       
       # Only previous residuals are needed to build the current screening sets.
       r <- r_prev
@@ -841,14 +1183,14 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         Hbar <- c(idpos,idneg,ms)
         IBs <- c(1:(nvar + 1), u.in.IBs, v.in.IBs, nvar+1+2*ms) # length(IBs) = ms
         # P <- diag(c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)+1)))
-        P <- c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)),1)
+        P <- c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)),-1)
         freevarrow <- c(rep(TRUE,nvar + 1), rep(FALSE,length(u.in.IBs)), 
                         rep(FALSE,length(v.in.IBs)),TRUE, TRUE) # 1~2, v_L not into the nonbasic set
       } else if (any(sh)) {
         Hbar <- c(idpos,idneg,ms)
         IBs <- c(1:(nvar + 1), u.in.IBs, v.in.IBs, nvar+1+ms) # length(IBs) = ms
         # P <- diag(c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)),1))
-        P <- c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)),-1)
+        P <- c(rep(1,length(u.in.IBs)),rep(-1,length(v.in.IBs)),1)
         freevarrow <- c(rep(TRUE,nvar + 1), rep(FALSE,length(u.in.IBs)), 
                         rep(FALSE,length(v.in.IBs)), TRUE, TRUE) # 1~2, u_H not into the nonbasic set
       } else {
@@ -1061,6 +1403,65 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
       }
 
       if (isTRUE(no_pivot_attempt)) {
+        no_pivot_info <- list(
+          round = rd,
+          attempt_id = attempt_counter,
+          force_full_sample = force_full_sample,
+          empty_pivot_count = empty_pivot_count,
+          M = M,
+          H_prev = H_seq[rd - 1, ],
+          r_prev = as.numeric(r_prev),
+          sl_idx = which(sl),
+          sh_idx = which(sh),
+          idx_not_jl_or_jh = idx_not_jl_or_jh,
+          ms = ms
+        )
+        append_round_attempt(
+          rd = rd,
+          attempt_info = c(list(action = "retry_no_pivot", no_pivot_attempt = TRUE), no_pivot_info)
+        )
+        if (isTRUE(force_full_sample)) {
+          acceptance_diagnostics[[rd]] <- c(list(reason = "no_pivot_full_sample"), no_pivot_info)
+          if (isTRUE(fallback)) {
+            return(finish_with_seq_fallback(rd, "no_pivot_full_sample", no_pivot_info))
+          }
+          return(fail_ppro_suffix(rd, "no_pivot_full_sample", no_pivot_info, current_M = M))
+        }
+        empty_pivot_count <- empty_pivot_count + 1L
+        mmm <- 2 * mmm
+        not_new_sl_sh <- TRUE
+        if (empty_pivot_count >= max_empty_pivot_retries) {
+          force_full_sample <- TRUE
+        }
+        next
+      }
+
+      if (j >= maxit) {
+        maxit_info <- list(
+          round = rd,
+          attempt_id = attempt_counter,
+          force_full_sample = force_full_sample,
+          empty_pivot_count = empty_pivot_count,
+          M = M,
+          H_prev = H_seq[rd - 1, ],
+          r_prev = as.numeric(r_prev),
+          sl_idx = which(sl),
+          sh_idx = which(sh),
+          idx_not_jl_or_jh = idx_not_jl_or_jh,
+          ms = ms,
+          maxit = maxit
+        )
+        append_round_attempt(
+          rd = rd,
+          attempt_info = c(list(action = "retry_maxit", no_pivot_attempt = FALSE), maxit_info)
+        )
+        if (isTRUE(force_full_sample)) {
+          acceptance_diagnostics[[rd]] <- c(list(reason = "maxit_full_sample"), maxit_info)
+          if (isTRUE(fallback)) {
+            return(finish_with_seq_fallback(rd, "maxit_full_sample", maxit_info))
+          }
+          return(fail_ppro_suffix(rd, "maxit_full_sample", maxit_info, current_M = M))
+        }
         empty_pivot_count <- empty_pivot_count + 1L
         mmm <- 2 * mmm
         not_new_sl_sh <- TRUE
@@ -1079,7 +1480,39 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
       bad.signs <- sum(sh.bad | sl.bad)
       H_candidate <- r1 - 1 - nvar
       H_candidate <- idx_not_jl_or_jh[H_candidate]
-      accept_subsample <- (bad.signs == 0) && is_valid_llqr_H(H_candidate, r)
+      cert <- certify_llqr_candidate_full(
+        estimate_candidate = estimate,
+        H_candidate = H_candidate,
+        A = A,
+        y = y,
+        w = w,
+        tau = tau,
+        residual_tol = residual_tol,
+        rank_tol = rank_tol
+      )
+      accept_subsample <- (bad.signs == 0) && isTRUE(cert$cert_ok)
+      append_round_attempt(
+        rd = rd,
+        attempt_info = list(
+          attempt_id = attempt_counter,
+          action = if (accept_subsample) "accept" else "reject_retry",
+          no_pivot_attempt = FALSE,
+          force_full_sample = force_full_sample,
+          empty_pivot_count = empty_pivot_count,
+          M = M,
+          H_prev = H_seq[rd - 1, ],
+          r_prev = as.numeric(r_prev),
+          sl_idx = which(sl),
+          sh_idx = which(sh),
+          idx_not_jl_or_jh = idx_not_jl_or_jh,
+          ms = ms,
+          H_candidate = H_candidate,
+          estimate_candidate = as.numeric(estimate),
+          bad_signs = bad.signs,
+          local_accept = accept_subsample,
+          certification = cert
+        )
+      )
       if (!accept_subsample) {
         if (bad.signs > 0.1 * ms) { 
           mmm <- 2 * mmm
@@ -1091,11 +1524,48 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
           not_new_sl_sh <- FALSE
           # cat("Some fixups: fixing ", rd, "\n")
         } else {
-          # Once screening has already collapsed to the full sample, repeated
-          # invalid_H retries add no new information. Fall back to the stable
-          # sequential solver for the remaining evaluation points instead.
-          if ((ms >= m) && !any(sl) && !any(sh) && !force_full_sample) {
-            return(finish_with_seq_fallback(rd, M))
+          cert_failure_reason <- if (!isTRUE(cert$candidate_H_valid)) {
+            "candidate_H_invalid"
+          } else if (!isTRUE(cert$candidate_in_zero_set)) {
+            "candidate_not_in_zero_set"
+          } else {
+            "candidate_cert_failed"
+          }
+          cert_failure_info <- list(
+            round = rd,
+            M = M,
+            ms = ms,
+            bad_signs = bad.signs,
+            H_prev = H_seq[rd - 1, ],
+            H_candidate = H_candidate,
+            estimate_candidate = as.numeric(estimate),
+            sl_idx = which(sl),
+            sh_idx = which(sh),
+            idx_not_jl_or_jh = idx_not_jl_or_jh,
+            certification = cert
+          )
+          if ((ms >= m) || (!any(sl) && !any(sh)) || isTRUE(force_full_sample)) {
+            acceptance_diagnostics[[rd]] <- c(
+              list(reason = cert_failure_reason),
+              cert_failure_info
+            )
+            finalize_round_debug(
+              rd = rd,
+              status = paste0("ppro_failed_", cert_failure_reason),
+              info = list(
+                H_prev = H_seq[rd - 1, ],
+                H_final = H_candidate,
+                estimate = as.numeric(estimate),
+                residual = as.numeric(r),
+                ll_est = as.numeric(crossprod(c(1, z[rd]), estimate)),
+                d_ll_est = estimate[1 + nvar],
+                n_sub = ms
+              )
+            )
+            if (isTRUE(fallback)) {
+              return(finish_with_seq_fallback(rd, cert_failure_reason, cert_failure_info))
+            }
+            return(fail_ppro_suffix(rd, cert_failure_reason, cert_failure_info, current_M = M))
           }
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
@@ -1127,7 +1597,11 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     
     
     if (j == maxit){
-      warning('Not converge')
+      info <- list(round = rd, maxit = maxit, stage = "post_acceptance_guard")
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(rd, "maxit", info))
+      }
+      return(fail_ppro_suffix(rd, "maxit", info, current_M = M))
     }
     it_num[rd] <- j
     ll_est[rd] <- crossprod(c(1,z[rd]),estimate)
@@ -1138,23 +1612,36 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
     }
     n_sub[rd] <- ms
     H_seq[rd,] <- H
+    finalize_round_debug(
+      rd = rd,
+      status = "accepted",
+      info = list(
+        H_prev = H_seq[rd - 1, ],
+        H_final = H,
+        estimate = as.numeric(estimate),
+        residual = as.numeric(r),
+        ll_est = ll_est[rd],
+        d_ll_est = d_ll_est[rd],
+        n_sub = ms
+      )
+    )
   }
   
-  # Reorder results back to the original order if track_order is TRUE
-  if (track_order) {
-    ll_est <- ll_est[order(original_order)]
-    d_ll_est <- d_ll_est[order(original_order)]
-    # it_num <- it_num[order(original_order)]
-  }
-  
-  return(list(ll_est = ll_est, d_ll_est = d_ll_est, it_num = it_num, residual_est = residual_est, h = h, M = M, n_sub = n_sub, H_seq = H_seq))
+  return(make_return(
+    returned_backend = "ppro",
+    M_value = if (exists("M", inherits = FALSE)) M else NA_real_
+  ))
 }
 
 # ============================================================================ #
 # Sequential algorithm for one-dim LLQR (Fortran version)
 # ============================================================================ #
 llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14,
-                                     maxit = 1e6, bland = FALSE, track_order = FALSE) {
+                                     maxit = 1e6, bland = FALSE, track_order = FALSE,
+                                     case = 1, h.factor = 1) {
+  ensure_llqr_fortran_library_loaded("llqr_seq.so")
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
   
   # Convert to vectors
   x <- as.vector(x)
@@ -1171,17 +1658,7 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
   nvar <- 1  # Always 1 for univariate LLQR
   rounds <- length(z)
   
-  # Handle bandwidth - calculate same way as R function
-  if (is.null(h)) {
-    # Using rule of thumb from Yu and Jones 1998 (same as llqr_tau_seq)
-    red_dim <- floor(0.2 * m)
-    index_y <- order(y)[red_dim:(m - red_dim)]
-    h <- KernSmooth::dpill(x[index_y], y[index_y])
-    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
-    if (is.nan(h)) {
-      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
-    }
-  }
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
   
   # Prepare output arrays
   ll_est <- numeric(rounds)
@@ -1202,6 +1679,7 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
                      h = as.double(h),
                      tol = as.double(tol),
                      maxit = as.integer(maxit),
+                     case_int = as.integer(case),
                      bland_int = as.integer(bland),
                      ll_est = as.double(ll_est),
                      d_ll_est = as.double(d_ll_est),
@@ -1231,9 +1709,18 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
 # Sequential plus preprocessing algorithm for one-dim LLQR (Fortran version)
 # ============================================================================ #
 llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
-                                      Mm.factor = 1e-3, case = 1, tol = 1e-14,
+                                      Mm.factor = 1e-3, case = 1, h.factor = 1, tol = 1e-14,
                                       maxit = 1e6, bland = TRUE,
-                                      track_order = FALSE) {
+                                      track_order = FALSE,
+                                      fallback = FALSE,
+                                      return_raw_backend = FALSE,
+                                      debug_trace = FALSE,
+                                      debug_rounds = NULL) {
+  ensure_llqr_fortran_library_loaded("llqr_ppro.so")
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
+  x <- as.vector(x)
+  y <- as.vector(y)
   
   # Auto-load library if not already loaded
   # if (!.llqr_ppro_loaded) {
@@ -1245,27 +1732,65 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   z <- as.vector(z)
   original_order <- order(z)
   z <- z[original_order]
-  if (!(case %in% c(1, 2))) {
-    stop("Invalid case specification. Use 1 (normal) or 2 (uniform).")
-  }
   
   # Setup
   m <- length(y)
   nvar <- 1  # univariate (can be extended for multivariate)
   rounds <- length(z)
-  
-  # Handle bandwidth - calculate same way as R function
-  if (is.null(h)) {
-    # Using rule of thumb from Yu and Jones 1998 (same as llqr_tau_seq)
-    red_dim <- floor(0.2 * m)
-    index_y <- order(y)[red_dim:(m - red_dim)]
-    h <- KernSmooth::dpill(x[index_y], y[index_y])
-    h <- 1.25 * h * (tau * (1 - tau)/(dnorm(qnorm(tau)))^2)^0.2
-    if (is.nan(h)) {
-      h <- 1.25 * max(m^(-1/(nvar + 4)), min(2, sd(y))*m^(-1/(nvar + 4)))
+  acceptance_diagnostics <- vector("list", rounds)
+  certification_log <- vector("list", rounds)
+  first_bad_round <- NA_integer_
+  fallback_triggered <- FALSE
+  cert_fail_detected <- FALSE
+  fallback_reason <- NULL
+  debug_round_mask <- rep(FALSE, rounds)
+  if (debug_trace) {
+    if (is.null(debug_rounds)) {
+      debug_round_mask[] <- TRUE
+    } else {
+      debug_rounds <- unique(as.integer(debug_rounds))
+      debug_rounds <- debug_rounds[!is.na(debug_rounds)]
+      debug_rounds <- debug_rounds[debug_rounds >= 1L & debug_rounds <= rounds]
+      debug_round_mask[debug_rounds] <- TRUE
     }
   }
-  
+  round_debug <- if (debug_trace) vector("list", rounds) else NULL
+  init_round_debug <- function(rd) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    round_debug[[rd]] <<- list(
+      round = rd,
+      attempts = list(),
+      final_status = "pending"
+    )
+  }
+  append_round_attempt <- function(rd, attempt_info) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    if (is.null(round_debug[[rd]])) {
+      init_round_debug(rd)
+    }
+    round_debug[[rd]]$attempts[[length(round_debug[[rd]]$attempts) + 1L]] <<- attempt_info
+  }
+  finalize_round_debug <- function(rd, status, info = list()) {
+    if (!debug_trace || !debug_round_mask[rd]) {
+      return(invisible(NULL))
+    }
+    if (is.null(round_debug[[rd]])) {
+      init_round_debug(rd)
+    }
+    round_debug[[rd]]$final_status <<- status
+    if (length(info) > 0L) {
+      for (nm in names(info)) {
+        round_debug[[rd]][[nm]] <<- info[[nm]]
+      }
+    }
+  }
+
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
+
   bland_int <- if (bland) 1L else 0L
   
   # Call Fortran
@@ -1290,36 +1815,239 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1),
                      ierr = integer(1))
 
-  if (!identical(as.integer(result$ierr), 0L)) {
-    fallback <- llqr_seq_fortran_wrapper(
+  raw_backend <- list(
+    ll_est = as.numeric(result$ll_est),
+    d_ll_est = as.numeric(result$d_ll_est),
+    it_num = as.integer(result$it_num),
+    residual_est = result$residual_est,
+    H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1),
+    M = NA_real_,
+    n_sub = rep(NA_integer_, rounds),
+    z = z,
+    ierr = as.integer(result$ierr)
+  )
+
+  make_return <- function(ll_est_value, d_ll_est_value, it_num_value, residual_est_value,
+                          H_seq_value, n_sub_value, returned_backend,
+                          first_failed_eval = NA_integer_, failure_reason = NULL,
+                          failure_info = NULL, fallback_triggered = FALSE,
+                          fallback_reason = NULL) {
+    ll_est_out <- as.numeric(ll_est_value)
+    d_ll_est_out <- as.numeric(d_ll_est_value)
+    if (track_order) {
+      ll_est_out <- ll_est_out[order(original_order)]
+      d_ll_est_out <- d_ll_est_out[order(original_order)]
+    }
+
+    list(
+      ll_est = ll_est_out,
+      d_ll_est = d_ll_est_out,
+      it_num = as.integer(it_num_value),
+      residual_est = residual_est_value,
+      H_seq = H_seq_value,
+      h = h,
+      M = NA_real_,
+      n_sub = n_sub_value,
+      acceptance_diagnostics = acceptance_diagnostics,
+      certification_log = certification_log,
+      round_debug = round_debug,
+      first_failed_eval = first_failed_eval,
+      first_bad_round = first_failed_eval,
+      failure_reason = failure_reason,
+      failure_info = failure_info,
+      fallback_triggered = fallback_triggered,
+      cert_fail_detected = !is.na(first_failed_eval),
+      fallback_reason = fallback_reason,
+      backend_ierr = as.integer(result$ierr),
+      returned_backend = returned_backend,
+      raw_backend = if (isTRUE(return_raw_backend)) raw_backend else NULL
+    )
+  }
+
+  fail_ppro_suffix <- function(rd_start, reason, info = NULL) {
+    ll_est_failed <- raw_backend$ll_est
+    d_ll_est_failed <- raw_backend$d_ll_est
+    it_num_failed <- raw_backend$it_num
+    residual_failed <- raw_backend$residual_est
+    H_failed <- raw_backend$H_seq
+    n_sub_failed <- raw_backend$n_sub
+    idx <- rd_start:rounds
+    ll_est_failed[idx] <- NA_real_
+    d_ll_est_failed[idx] <- NA_real_
+    it_num_failed[idx] <- NA_integer_
+    residual_failed[idx, ] <- NA_real_
+    H_failed[idx, ] <- NA_integer_
+    n_sub_failed[idx] <- NA_integer_
+    if (is.null(acceptance_diagnostics[[rd_start]])) {
+      acceptance_diagnostics[[rd_start]] <<- list(
+        round = as.integer(rd_start),
+        reason = reason,
+        info = info
+      )
+    }
+    finalize_round_debug(
+      rd = rd_start,
+      status = paste0("ppro_failed_", reason),
+      info = list(failure_info = info)
+    )
+    make_return(
+      ll_est_value = ll_est_failed,
+      d_ll_est_value = d_ll_est_failed,
+      it_num_value = it_num_failed,
+      residual_est_value = residual_failed,
+      H_seq_value = H_failed,
+      n_sub_value = n_sub_failed,
+      returned_backend = "ppro_failed",
+      first_failed_eval = as.integer(rd_start),
+      failure_reason = reason,
+      failure_info = info
+    )
+  }
+
+  finish_with_seq_fallback <- function(rd_start, failure_reason_arg = NULL, failure_info_arg = NULL) {
+    fallback_maxit <- max(as.numeric(maxit), 1e6)
+    fallback_fit <- llqr_seq_fortran_wrapper(
       x = x,
       y = y,
       tau = tau,
       z = z,
       h = h,
       tol = tol,
-      maxit = maxit,
+      maxit = fallback_maxit,
       bland = bland,
-      track_order = track_order
+      track_order = FALSE,
+      case = case,
+      h.factor = h.factor
     )
-    fallback$M <- NA_real_
-    fallback$n_sub <- rep(length(y), length(fallback$ll_est))
-    return(fallback)
+    make_return(
+      ll_est_value = fallback_fit$ll_est,
+      d_ll_est_value = fallback_fit$d_ll_est,
+      it_num_value = fallback_fit$it_num,
+      residual_est_value = fallback_fit$residual_est,
+      H_seq_value = fallback_fit$H_seq,
+      n_sub_value = rep.int(m, rounds),
+      returned_backend = "seq_fallback",
+      first_failed_eval = as.integer(rd_start),
+      failure_reason = failure_reason_arg,
+      failure_info = failure_info_arg,
+      fallback_triggered = TRUE,
+      fallback_reason = failure_reason_arg
+    )
   }
 
-  ll_est <- result$ll_est
-  d_ll_est <- result$d_ll_est
-  if (track_order) {
-    ll_est <- ll_est[order(original_order)]
-    d_ll_est <- d_ll_est[order(original_order)]
+  infer_failed_round <- function(H_seq_value) {
+    invalid <- which(apply(H_seq_value, 1L, function(h_row) {
+      any(is.na(h_row)) || any(h_row < 1L | h_row > m) || anyDuplicated(as.integer(h_row)) > 0L
+    }))
+    if (length(invalid) > 0L) {
+      return(as.integer(invalid[1L]))
+    }
+    1L
   }
-  
-  # Return results matching R's output format
-  return(list(
-    ll_est = ll_est,
-    d_ll_est = d_ll_est,
-    it_num = result$it_num,
-    residual_est = result$residual_est,
-    H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1)
-  ))
+
+  if (!identical(as.integer(result$ierr), 0L)) {
+    ierr_value <- as.integer(result$ierr)
+    reason <- if (identical(ierr_value, 1L)) "ppro_cert_failed" else "fortran_ierr"
+    rd_failed <- infer_failed_round(raw_backend$H_seq)
+    info <- list(ierr = ierr_value)
+    acceptance_diagnostics[[rd_failed]] <- list(
+      round = rd_failed,
+      reason = reason,
+      ierr = ierr_value
+    )
+    if (isTRUE(fallback)) {
+      return(finish_with_seq_fallback(rd_failed, reason, info))
+    }
+    return(fail_ppro_suffix(rd_failed, reason, info))
+  }
+
+  ll_est_raw <- raw_backend$ll_est
+  d_ll_est_raw <- raw_backend$d_ll_est
+  H_seq_raw <- raw_backend$H_seq
+  residual_est_raw <- raw_backend$residual_est
+  n_sub <- rep(NA_integer_, rounds)
+  A <- cbind(1, x)
+
+  for (rd in seq_len(rounds)) {
+    init_round_debug(rd)
+    estimate_candidate <- llqr_estimate_from_local_linear(
+      ll_value = ll_est_raw[rd],
+      d_ll_value = d_ll_est_raw[rd],
+      z_value = z[rd]
+    )
+    H_candidate <- as.integer(H_seq_raw[rd, ])
+    w <- llqr_kernel_weights((z[rd] - x) / h, case = case)
+    cert_record <- build_llqr_full_cert_record(
+      round = rd,
+      backend = "fortran_ppro",
+      estimate_candidate = estimate_candidate,
+      H_candidate = H_candidate,
+      A = A,
+      y = y,
+      w = w,
+      tau = tau
+    )
+    certification_log[[rd]] <- cert_record
+    append_round_attempt(
+      rd = rd,
+      attempt_info = list(
+        attempt_id = 1L,
+        action = if (isTRUE(cert_record$certification$cert_ok)) "accept" else "reject_cert",
+        H_candidate = H_candidate,
+        estimate_candidate = estimate_candidate,
+        certification = cert_record$certification,
+        candidate_class = cert_record$candidate_class
+      )
+    )
+    if (!isTRUE(cert_record$certification$cert_ok)) {
+      reason <- if (!isTRUE(cert_record$certification$candidate_H_valid)) {
+        "candidate_H_invalid"
+      } else if (!isTRUE(cert_record$certification$candidate_in_zero_set)) {
+        "candidate_not_in_zero_set"
+      } else {
+        "candidate_cert_failed"
+      }
+      acceptance_diagnostics[[rd]] <- cert_record
+      finalize_round_debug(
+        rd = rd,
+        status = paste0("ppro_failed_", reason),
+        info = list(
+          H_prev = if (rd > 1L) H_seq_raw[rd - 1L, ] else NA_integer_,
+          H_final = H_candidate,
+          estimate = estimate_candidate,
+          residual = as.numeric(y - A %*% estimate_candidate),
+          ll_est = ll_est_raw[rd],
+          d_ll_est = d_ll_est_raw[rd],
+          n_sub = n_sub[rd]
+        )
+      )
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(rd, reason, cert_record))
+      }
+      return(fail_ppro_suffix(rd, reason, cert_record))
+    }
+    finalize_round_debug(
+      rd = rd,
+      status = "accepted",
+      info = list(
+        H_prev = if (rd > 1L) H_seq_raw[rd - 1L, ] else NA_integer_,
+        H_final = H_candidate,
+        estimate = estimate_candidate,
+        residual = as.numeric(y - A %*% estimate_candidate),
+        ll_est = ll_est_raw[rd],
+        d_ll_est = d_ll_est_raw[rd],
+        n_sub = n_sub[rd]
+      )
+    )
+  }
+
+  make_return(
+    ll_est_value = ll_est_raw,
+    d_ll_est_value = d_ll_est_raw,
+    it_num_value = raw_backend$it_num,
+    residual_est_value = residual_est_raw,
+    H_seq_value = H_seq_raw,
+    n_sub_value = n_sub,
+    returned_backend = "ppro"
+  )
 }
