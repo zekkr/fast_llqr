@@ -524,7 +524,8 @@ tvc_rq_ppro <- function (x, y, tau = 0.5, h = NULL, Mm.factor = 1e-4, pmethod = 
 # ============================================================================ #
 tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14, maxit = 1e6,
                            bland = FALSE, Mm.factor = 1e-4, eps = 1e-06, cpp_helper = FALSE,
-                           store_residual = FALSE) {
+                           store_residual = FALSE, fallback = FALSE,
+                           debug_trace = FALSE, debug_rounds = NULL) {
   x <- as.matrix(x)
   y <- as.matrix(y)
   
@@ -568,10 +569,15 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   r_prev <- rep(0, m)
   n_sub <- rep(0, m)
   H_seq <- matrix(0, nrow = m, ncol = 2*(nvar+1))
+  acceptance_diagnostics <- vector("list", m)
+  first_failed_eval <- NA_integer_
+  failure_reason <- NULL
+  failure_info <- NULL
+  round_debug <- if (debug_trace) vector("list", m) else NULL
   # test_sl_sh <- rep(0, m)
   n_sub[1] <- m
   min_subsample_size <- max(5 * (nvar + 1), ceiling(0.2 * m))
-  residual_tol <- 1e-8
+  residual_tol <- 1e-6
   rank_tol <- 1e-10
   max_empty_pivot_retries <- 3L
 
@@ -587,6 +593,107 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     AH <- A[H_idx, , drop = FALSE]
     rank_ok <- qr(AH, tol = rank_tol)$rank == p
     rank_ok && (max(abs(r_vec[H_idx])) <= residual_tol)
+  }
+
+  certify_tvcqr_candidate_local <- function(estimate_candidate, H_candidate, r_vec) {
+    H_candidate <- as.integer(H_candidate)
+    r_vec <- as.numeric(r_vec)
+    p <- 2 * (nvar + 1)
+    zero_idx <- which(abs(r_vec) <= residual_tol)
+    candidate_H_in_range <- length(H_candidate) == p &&
+      !anyNA(H_candidate) &&
+      !any(H_candidate < 1L | H_candidate > m) &&
+      !anyDuplicated(H_candidate)
+    candidate_rank_ok <- candidate_H_in_range &&
+      (qr(A[H_candidate, , drop = FALSE], tol = rank_tol)$rank == p)
+    candidate_zero_ok <- candidate_H_in_range &&
+      all(abs(r_vec[H_candidate]) <= residual_tol)
+    candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
+    candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
+    list(
+      cert_ok = candidate_H_valid && candidate_in_zero_set,
+      candidate_H_valid = candidate_H_valid,
+      candidate_in_zero_set = candidate_in_zero_set,
+      H_recovered_from_full = zero_idx,
+      residual = r_vec
+    )
+  }
+
+  make_return <- function(returned_backend,
+                          fallback_triggered = FALSE,
+                          fallback_reason = NULL,
+                          M_value = NA_real_) {
+    list(
+      theta_ll_est = theta_ll_est,
+      it_num = it_num,
+      residual_est = residual_est,
+      M = M_value,
+      n_sub = n_sub,
+      H_seq = H_seq,
+      h = h,
+      acceptance_diagnostics = acceptance_diagnostics,
+      round_debug = round_debug,
+      first_failed_eval = first_failed_eval,
+      failure_reason = failure_reason,
+      failure_info = failure_info,
+      fallback_triggered = fallback_triggered,
+      fallback_reason = fallback_reason,
+      returned_backend = returned_backend
+    )
+  }
+
+  fail_ppro_suffix <- function(t_start, reason, info = NULL, current_M = NA_real_) {
+    first_failed_eval <<- as.integer(t_start)
+    failure_reason <<- reason
+    failure_info <<- info
+    idx <- t_start:m
+    theta_ll_est[idx, ] <<- NA_real_
+    it_num[idx] <<- NA_integer_
+    n_sub[idx] <<- NA_integer_
+    H_seq[idx, ] <<- NA_integer_
+    if (store_residual) {
+      residual_est[idx, ] <<- NA_real_
+    }
+    if (is.null(acceptance_diagnostics[[t_start]])) {
+      acceptance_diagnostics[[t_start]] <<- list(
+        time = as.integer(t_start),
+        reason = reason,
+        M = current_M,
+        info = info
+      )
+    }
+    make_return(returned_backend = "ppro_failed", M_value = current_M)
+  }
+
+  finish_with_seq_fallback <- function(t_start, failure_reason_arg, failure_info_arg = NULL) {
+    first_failed_eval <<- as.integer(t_start)
+    failure_reason <<- failure_reason_arg
+    failure_info <<- failure_info_arg
+    fallback_maxit <- max(as.numeric(maxit), 1e6)
+    seq_fit <- tvcqr_seq(
+      x = x,
+      y = y,
+      tau = tau,
+      h = h,
+      h.factor = h.factor,
+      tol = tol,
+      maxit = fallback_maxit,
+      bland = bland
+    )
+
+    theta_ll_est <<- seq_fit$theta_ll_est
+    it_num <<- as.integer(seq_fit$it_num)
+    n_sub <<- rep.int(m, m)
+    H_seq <<- seq_fit$H_seq
+    if (store_residual) {
+      residual_est <<- seq_fit$residual_est
+    }
+    make_return(
+      returned_backend = "seq_fallback",
+      fallback_triggered = TRUE,
+      fallback_reason = failure_reason_arg,
+      M_value = NA_real_
+    )
   }
   
   # t = 1
@@ -719,7 +826,11 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     }
     
     if (j == maxit){
-      warning('Not converge')
+      info <- list(time = 1L, maxit = maxit, stage = "initial_full_sample")
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(1L, "maxit", info))
+      }
+      return(fail_ppro_suffix(1L, "maxit", info, current_M = NA_real_))
     }
     it_num[1] <- j
     
@@ -756,36 +867,6 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   gammaxs.temp <- matrix(NA, nrow = m + 2, ncol = 2*(nvar + 1))
   bs.temp <- rep(NA, m + 2)
 
-  finish_with_seq_fallback <- function(t_start, current_M) {
-    seq_fit <- tvcqr_seq(
-      x = x,
-      y = y,
-      tau = tau,
-      h = h,
-      h.factor = h.factor,
-      tol = tol,
-      maxit = maxit,
-      bland = bland
-    )
-
-    theta_ll_est[t_start:m, ] <<- seq_fit$theta_ll_est[t_start:m, , drop = FALSE]
-    it_num[t_start:m] <<- NA_real_
-    if (store_residual) {
-      residual_est[t_start:m, ] <<- seq_fit$residual_est[t_start:m, , drop = FALSE]
-    }
-    n_sub[t_start:m] <<- m
-    H_seq[t_start:m, ] <<- seq_fit$H_seq[t_start:m, , drop = FALSE]
-
-    return(list(
-      theta_ll_est = theta_ll_est,
-      it_num = it_num,
-      residual_est = residual_est,
-      M = current_M,
-      n_sub = n_sub,
-      H_seq = H_seq
-    ))
-  }
-  
   for (eva_t in 2:m){
     # print(eva_t)
     not_optimal <- TRUE
@@ -1122,6 +1203,55 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       }
 
       if (isTRUE(no_pivot_attempt)) {
+        no_pivot_info <- list(
+          time = eva_t,
+          force_full_sample = force_full_sample,
+          empty_pivot_count = empty_pivot_count,
+          M = M,
+          H_prev = H_seq[eva_t - 1, ],
+          r_prev = as.numeric(r_prev),
+          sl_idx = which(sl),
+          sh_idx = which(sh),
+          idx_not_jl_or_jh = idx_not_jl_or_jh,
+          ms = ms
+        )
+        if (isTRUE(force_full_sample)) {
+          acceptance_diagnostics[[eva_t]] <- c(list(reason = "no_pivot_full_sample"), no_pivot_info)
+          if (isTRUE(fallback)) {
+            return(finish_with_seq_fallback(eva_t, "no_pivot_full_sample", no_pivot_info))
+          }
+          return(fail_ppro_suffix(eva_t, "no_pivot_full_sample", no_pivot_info, current_M = M))
+        }
+        empty_pivot_count <- empty_pivot_count + 1L
+        mmm <- 2 * mmm
+        not_new_sl_sh <- TRUE
+        if (empty_pivot_count >= max_empty_pivot_retries) {
+          force_full_sample <- TRUE
+        }
+        next
+      }
+
+      if (j >= maxit) {
+        maxit_info <- list(
+          time = eva_t,
+          force_full_sample = force_full_sample,
+          empty_pivot_count = empty_pivot_count,
+          M = M,
+          H_prev = H_seq[eva_t - 1, ],
+          r_prev = as.numeric(r_prev),
+          sl_idx = which(sl),
+          sh_idx = which(sh),
+          idx_not_jl_or_jh = idx_not_jl_or_jh,
+          ms = ms,
+          maxit = maxit
+        )
+        if (isTRUE(force_full_sample)) {
+          acceptance_diagnostics[[eva_t]] <- c(list(reason = "maxit_full_sample"), maxit_info)
+          if (isTRUE(fallback)) {
+            return(finish_with_seq_fallback(eva_t, "maxit_full_sample", maxit_info))
+          }
+          return(fail_ppro_suffix(eva_t, "maxit_full_sample", maxit_info, current_M = M))
+        }
         empty_pivot_count <- empty_pivot_count + 1L
         mmm <- 2 * mmm
         not_new_sl_sh <- TRUE
@@ -1143,7 +1273,12 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       bad.signs <- sum(sh.bad | sl.bad)
       H_candidate <- r1 - 2 - 2 * nvar
       H_candidate <- idx_not_jl_or_jh[H_candidate]
-      accept_subsample <- (bad.signs == 0) && is_valid_tvcqr_H(H_candidate, r)
+      cert <- certify_tvcqr_candidate_local(
+        estimate_candidate = estimate,
+        H_candidate = H_candidate,
+        r_vec = r
+      )
+      accept_subsample <- (bad.signs == 0) && isTRUE(cert$cert_ok)
       if (!accept_subsample) {
         if (bad.signs > 0.1 * ms) { 
           mmm <- 2 * mmm
@@ -1155,8 +1290,32 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
           not_new_sl_sh <- FALSE
           #cat("Some fixups: fixing ", eva_t, "\n")
         } else {
-          if ((ms >= m) && !any(sl) && !any(sh) && !force_full_sample) {
-            return(finish_with_seq_fallback(eva_t, M))
+          cert_failure_reason <- if (!isTRUE(cert$candidate_H_valid)) {
+            "candidate_H_invalid"
+          } else if (!isTRUE(cert$candidate_in_zero_set)) {
+            "candidate_not_in_zero_set"
+          } else {
+            "candidate_cert_failed"
+          }
+          cert_failure_info <- list(
+            time = eva_t,
+            M = M,
+            ms = ms,
+            bad_signs = bad.signs,
+            H_prev = H_seq[eva_t - 1, ],
+            H_candidate = H_candidate,
+            estimate_candidate = as.numeric(estimate),
+            sl_idx = which(sl),
+            sh_idx = which(sh),
+            idx_not_jl_or_jh = idx_not_jl_or_jh,
+            certification = cert
+          )
+          if ((ms >= m) || (!any(sl) && !any(sh)) || isTRUE(force_full_sample)) {
+            acceptance_diagnostics[[eva_t]] <- c(list(reason = cert_failure_reason), cert_failure_info)
+            if (isTRUE(fallback)) {
+              return(finish_with_seq_fallback(eva_t, cert_failure_reason, cert_failure_info))
+            }
+            return(fail_ppro_suffix(eva_t, cert_failure_reason, cert_failure_info, current_M = M))
           }
           mmm <- 2 * mmm
           not_new_sl_sh <- TRUE
@@ -1188,7 +1347,11 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     }
     
     if (j == maxit){
-      warning('Not converge')
+      info <- list(time = eva_t, maxit = maxit, stage = "post_acceptance_guard")
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(eva_t, "maxit", info))
+      }
+      return(fail_ppro_suffix(eva_t, "maxit", info, current_M = M))
     }
     it_num[eva_t] <- j 
     theta_ll_est[eva_t, ] <- estimate[1:(nvar + 1)] + (eva_t / m) * estimate[(nvar + 2):(2 * (nvar + 1))]
@@ -1202,7 +1365,10 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
     
   }
   
-  return(list(theta_ll_est = theta_ll_est, it_num = it_num, residual_est = residual_est, M = M, n_sub = n_sub, H_seq = H_seq))
+  return(make_return(
+    returned_backend = "ppro",
+    M_value = if (exists("M", inherits = FALSE)) M else NA_real_
+  ))
 }
 
 # ============================================================================ #
@@ -1272,7 +1438,7 @@ tvcqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, tol = 1e-14,
 tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, 
                                            tol = 1e-14, maxit = 1e6, bland = FALSE, 
                                            Mm.factor = 1e-4, eps = 1e-06,
-                                           store_residual = TRUE) {
+                                           store_residual = TRUE, fallback = FALSE) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1322,6 +1488,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   M_out <- 0.0
   n_sub <- integer(m)
   H_seq <- matrix(0L, nrow = m, ncol = 2 * (nvar + 1))
+  acceptance_diagnostics <- vector("list", m)
+  certification_log <- vector("list", m)
   
   # Call the Fortran subroutine using .Fortran interface
   # Note: .Fortran always passes by value and returns modified copies
@@ -1351,22 +1519,98 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 
-  if (!identical(as.integer(result$ierr), 0L)) {
-    fallback <- tvcqr_seq_fortran_wrapper(
+  make_return <- function(theta_value, it_value, residual_value, M_value, n_sub_value,
+                          H_value, returned_backend, first_failed_eval = NA_integer_,
+                          failure_reason = NULL, failure_info = NULL,
+                          fallback_triggered = FALSE, fallback_reason = NULL) {
+    list(
+      theta_ll_est = theta_value,
+      it_num = as.integer(it_value),
+      residual_est = residual_value,
+      M = M_value,
+      n_sub = as.integer(n_sub_value),
+      H_seq = H_value,
+      h = result$h,
+      acceptance_diagnostics = acceptance_diagnostics,
+      certification_log = certification_log,
+      first_failed_eval = first_failed_eval,
+      first_bad_round = first_failed_eval,
+      failure_reason = failure_reason,
+      failure_info = failure_info,
+      fallback_triggered = fallback_triggered,
+      cert_fail_detected = !is.na(first_failed_eval),
+      fallback_reason = fallback_reason,
+      backend_ierr = as.integer(result$ierr),
+      returned_backend = returned_backend
+    )
+  }
+
+  finish_with_seq_fallback <- function(t_start, failure_reason_arg, failure_info_arg = NULL) {
+    fallback_maxit <- max(as.numeric(maxit), 1e6)
+    fallback_fit <- tvcqr_seq_fortran_wrapper(
       x = x,
       y = y,
       tau = tau,
       h = if (h_value > 0) h_value else NULL,
       tol = tol,
-      maxit = maxit,
+      maxit = fallback_maxit,
       bland = bland
     )
-    fallback$M <- NA_real_
-    fallback$n_sub <- rep(m, m)
-    if (!isTRUE(store_residual)) {
-      fallback$residual_est <- NULL
+    make_return(
+      theta_value = fallback_fit$theta_ll_est,
+      it_value = fallback_fit$it_num,
+      residual_value = if (isTRUE(store_residual)) fallback_fit$residual_est else NULL,
+      M_value = NA_real_,
+      n_sub_value = rep.int(m, m),
+      H_value = fallback_fit$H_seq,
+      returned_backend = "seq_fallback",
+      first_failed_eval = as.integer(t_start),
+      failure_reason = failure_reason_arg,
+      failure_info = failure_info_arg,
+      fallback_triggered = TRUE,
+      fallback_reason = failure_reason_arg
+    )
+  }
+
+  infer_failed_time <- function(H_value) {
+    invalid <- which(apply(H_value, 1L, function(h_row) {
+      any(is.na(h_row)) || any(h_row < 1L | h_row > m) || anyDuplicated(as.integer(h_row)) > 0L
+    }))
+    if (length(invalid) > 0L) {
+      return(as.integer(invalid[1L]))
     }
-    return(fallback)
+    1L
+  }
+
+  fail_ppro_suffix <- function(t_start, reason, info = NULL,
+                               theta_value, it_value, residual_value, M_value, n_sub_value, H_value) {
+    idx <- t_start:m
+    theta_value[idx, ] <- NA_real_
+    it_value[idx] <- NA_integer_
+    n_sub_value[idx] <- NA_integer_
+    H_value[idx, ] <- NA_integer_
+    if (!is.null(residual_value)) {
+      residual_value[idx, ] <- NA_real_
+    }
+    if (is.null(acceptance_diagnostics[[t_start]])) {
+      acceptance_diagnostics[[t_start]] <<- list(
+        time = as.integer(t_start),
+        reason = reason,
+        info = info
+      )
+    }
+    make_return(
+      theta_value = theta_value,
+      it_value = it_value,
+      residual_value = residual_value,
+      M_value = M_value,
+      n_sub_value = n_sub_value,
+      H_value = H_value,
+      returned_backend = "ppro_failed",
+      first_failed_eval = as.integer(t_start),
+      failure_reason = reason,
+      failure_info = info
+    )
   }
   
   # Reshape the flattened arrays back to matrices
@@ -1378,16 +1622,88 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     NULL
   }
   H_seq <- matrix(result$H_seq, nrow = m, ncol = 2 * (nvar + 1), byrow = FALSE)
+
+  if (!identical(as.integer(result$ierr), 0L)) {
+    ierr_value <- as.integer(result$ierr)
+    reason <- if (identical(ierr_value, 1L)) "ppro_cert_failed" else "fortran_ierr"
+    t_failed <- infer_failed_time(H_seq)
+    info <- list(ierr = ierr_value)
+    acceptance_diagnostics[[t_failed]] <- list(
+      time = t_failed,
+      reason = reason,
+      ierr = ierr_value
+    )
+    if (isTRUE(fallback)) {
+      return(finish_with_seq_fallback(t_failed, reason, info))
+    }
+    return(fail_ppro_suffix(
+      t_start = t_failed,
+      reason = reason,
+      info = info,
+      theta_value = theta_ll_est,
+      it_value = result$it_num,
+      residual_value = residual_est,
+      M_value = result$M_out,
+      n_sub_value = result$n_sub,
+      H_value = H_seq
+    ))
+  }
+
+  if (isTRUE(store_residual)) {
+    A_base <- cbind(1, x)
+    A_full <- cbind(A_base, A_base * ((seq_len(m) / m)))
+    p <- 2 * (nvar + 1)
+    for (eva_t in seq_len(m)) {
+      H_candidate <- as.integer(H_seq[eva_t, ])
+      r_vec <- residual_est[eva_t, ]
+      zero_idx <- which(abs(r_vec) <= 1e-8)
+      candidate_H_in_range <- length(H_candidate) == p &&
+        !anyNA(H_candidate) &&
+        !any(H_candidate < 1L | H_candidate > m) &&
+        !anyDuplicated(H_candidate)
+      candidate_rank_ok <- candidate_H_in_range &&
+        (qr(A_full[H_candidate, , drop = FALSE], tol = 1e-10)$rank == p)
+      candidate_zero_ok <- candidate_H_in_range &&
+        all(abs(r_vec[H_candidate]) <= 1e-8)
+      candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
+      candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
+      if (!(candidate_H_valid && candidate_in_zero_set)) {
+        reason <- if (!candidate_H_valid) "candidate_H_invalid" else "candidate_not_in_zero_set"
+        info <- list(
+          time = eva_t,
+          H_candidate = H_candidate,
+          candidate_H_valid = candidate_H_valid,
+          candidate_in_zero_set = candidate_in_zero_set,
+          H_recovered_from_full = zero_idx
+        )
+        acceptance_diagnostics[[eva_t]] <- c(list(reason = reason), info)
+        if (isTRUE(fallback)) {
+          return(finish_with_seq_fallback(eva_t, reason, info))
+        }
+        return(fail_ppro_suffix(
+          t_start = eva_t,
+          reason = reason,
+          info = info,
+          theta_value = theta_ll_est,
+          it_value = result$it_num,
+          residual_value = residual_est,
+          M_value = result$M_out,
+          n_sub_value = result$n_sub,
+          H_value = H_seq
+        ))
+      }
+    }
+  }
   
   # Return a named list with all results
   # This structure makes it easy to access individual components
-  return(list(
-    theta_ll_est = theta_ll_est,    # Time-varying coefficient estimates
-    it_num = result$it_num,          # Number of iterations at each time point
-    residual_est = residual_est,     # Residuals at each time point
-    M = result$M_out,                # Final threshold value used
-    n_sub = result$n_sub,            # Subsample size at each time point
-    H_seq = H_seq,                   # Interpolation indices at each time point
-    h = result$h                     # Bandwidth used (useful if it was calculated)
+  return(make_return(
+    theta_value = theta_ll_est,
+    it_value = result$it_num,
+    residual_value = residual_est,
+    M_value = result$M_out,
+    n_sub_value = result$n_sub,
+    H_value = H_seq,
+    returned_backend = "ppro"
   ))
 }

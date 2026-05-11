@@ -87,6 +87,9 @@ compare_hseq_rep <- function(base_h, target_h) {
   if (nrow(base_m) != nrow(target_m) || ncol(base_m) != ncol(target_m)) {
     return("shape_mismatch")
   }
+  if (anyNA(target_m)) {
+    return("target_incomplete")
+  }
 
   for (i in seq_len(nrow(base_m))) {
     if (!row_set_equal(base_m[i, ], target_m[i, ])) {
@@ -107,6 +110,7 @@ check_one_method <- function(results_obj, base_method, target_method, rep_limit)
       n_missing_target_hseq = NA_integer_,
       n_shape_mismatch = NA_integer_,
       n_row_set_mismatch = NA_integer_,
+      n_target_incomplete = NA_integer_,
       first_failed_rep = NA_integer_,
       stringsAsFactors = FALSE
     ))
@@ -125,6 +129,7 @@ check_one_method <- function(results_obj, base_method, target_method, rep_limit)
       n_missing_target_hseq = NA_integer_,
       n_shape_mismatch = NA_integer_,
       n_row_set_mismatch = NA_integer_,
+      n_target_incomplete = NA_integer_,
       first_failed_rep = NA_integer_,
       stringsAsFactors = FALSE
     ))
@@ -141,6 +146,7 @@ check_one_method <- function(results_obj, base_method, target_method, rep_limit)
       n_missing_target_hseq = 0L,
       n_shape_mismatch = 0L,
       n_row_set_mismatch = 0L,
+      n_target_incomplete = 0L,
       first_failed_rep = NA_integer_,
       stringsAsFactors = FALSE
     ))
@@ -151,18 +157,21 @@ check_one_method <- function(results_obj, base_method, target_method, rep_limit)
     reasons[i] <- compare_hseq_rep(base_list[[i]], target_list[[i]])
   }
 
-  failed_idx <- which(reasons != "ok")
+  completed <- reasons != "target_incomplete"
+  checked_reasons <- reasons[completed]
+  failed_idx <- which(completed & reasons != "ok")
   n_failed <- length(failed_idx)
 
   data.frame(
     target_method = target_method,
     baseline_method = base_method,
-    n_rep_checked = n_rep,
+    n_rep_checked = sum(completed),
     n_failed = n_failed,
-    n_missing_base_hseq = sum(reasons == "missing_base_hseq"),
-    n_missing_target_hseq = sum(reasons == "missing_target_hseq"),
-    n_shape_mismatch = sum(reasons == "shape_mismatch"),
-    n_row_set_mismatch = sum(reasons == "row_set_mismatch"),
+    n_missing_base_hseq = sum(checked_reasons == "missing_base_hseq"),
+    n_missing_target_hseq = sum(checked_reasons == "missing_target_hseq"),
+    n_shape_mismatch = sum(checked_reasons == "shape_mismatch"),
+    n_row_set_mismatch = sum(checked_reasons == "row_set_mismatch"),
+    n_target_incomplete = sum(reasons == "target_incomplete"),
     first_failed_rep = if (n_failed > 0) failed_idx[1] else NA_integer_,
     stringsAsFactors = FALSE
   )
@@ -297,4 +306,3 @@ main <- function() {
 }
 
 main()
-
