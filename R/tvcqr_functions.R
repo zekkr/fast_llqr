@@ -1484,12 +1484,14 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # These arrays will be filled by the Fortran subroutine
   theta_ll_est <- matrix(0.0, nrow = m, ncol = nvar + 1)
   it_num <- integer(m)
-  residual_est <- if (isTRUE(store_residual)) matrix(0.0, nrow = m, ncol = m) else 0.0
+  residual_est_backend <- matrix(0.0, nrow = m, ncol = m)
   M_out <- 0.0
   n_sub <- integer(m)
   H_seq <- matrix(0L, nrow = m, ncol = 2 * (nvar + 1))
   acceptance_diagnostics <- vector("list", m)
   certification_log <- vector("list", m)
+  residual_tol <- 1e-6
+  rank_tol <- 1e-10
   
   # Call the Fortran subroutine using .Fortran interface
   # Note: .Fortran always passes by value and returns modified copies
@@ -1507,15 +1509,16 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      bland_int = as.integer(bland),       # Convert logical to integer
                      Mm_factor = as.double(Mm.factor),    
                      eps = as.double(eps),                
-                     store_residual_int = as.integer(isTRUE(store_residual)),
+                     store_residual_int = as.integer(1L),
                      # Output arguments - pre-allocated arrays
                      theta_ll_est = as.double(theta_ll_est),
                      it_num = as.integer(it_num),
-                     residual_est = as.double(residual_est),
+                     residual_est = as.double(residual_est_backend),
                      M_out = as.double(M_out),
                      n_sub = as.integer(n_sub),
                      H_seq = as.integer(H_seq),
                      ierr = as.integer(0),
+                     failed_eval = as.integer(0),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 
@@ -1523,6 +1526,11 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                           H_value, returned_backend, first_failed_eval = NA_integer_,
                           failure_reason = NULL, failure_info = NULL,
                           fallback_triggered = FALSE, fallback_reason = NULL) {
+    failed_eval_value <- if (!is.na(first_failed_eval)) {
+      as.integer(first_failed_eval)
+    } else {
+      as.integer(result$failed_eval)
+    }
     list(
       theta_ll_est = theta_value,
       it_num = as.integer(it_value),
@@ -1535,12 +1543,14 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       certification_log = certification_log,
       first_failed_eval = first_failed_eval,
       first_bad_round = first_failed_eval,
+      failed_eval = failed_eval_value,
       failure_reason = failure_reason,
       failure_info = failure_info,
       fallback_triggered = fallback_triggered,
       cert_fail_detected = !is.na(first_failed_eval),
       fallback_reason = fallback_reason,
       backend_ierr = as.integer(result$ierr),
+      backend_failed_eval = as.integer(result$failed_eval),
       returned_backend = returned_backend
     )
   }
@@ -1582,6 +1592,27 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     1L
   }
 
+  backend_failed_time <- function() {
+    failed_eval_value <- as.integer(result$failed_eval)
+    if (length(failed_eval_value) == 1L && !is.na(failed_eval_value) &&
+        failed_eval_value >= 1L && failed_eval_value <= m) {
+      return(failed_eval_value)
+    }
+    infer_failed_time(H_seq)
+  }
+
+  failure_reason_from_ierr <- function(ierr_value) {
+    switch(
+      as.character(ierr_value),
+      "1" = "ppro_cert_failed",
+      "2" = "ppro_simplex_nonconverged",
+      "3" = "candidate_H_invalid",
+      "4" = "candidate_H_singular",
+      "5" = "fortran_invariant_violation",
+      "fortran_ierr"
+    )
+  }
+
   fail_ppro_suffix <- function(t_start, reason, info = NULL,
                                theta_value, it_value, residual_value, M_value, n_sub_value, H_value) {
     idx <- t_start:m
@@ -1616,22 +1647,27 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # Reshape the flattened arrays back to matrices
   # Fortran stores matrices in column-major order, same as R
   theta_ll_est <- matrix(result$theta_ll_est, nrow = m, ncol = nvar + 1, byrow = FALSE)
-  residual_est <- if (isTRUE(store_residual)) {
-    matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
-  } else {
-    NULL
-  }
+  residual_est_backend <- matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
+  residual_est <- if (isTRUE(store_residual)) residual_est_backend else NULL
   H_seq <- matrix(result$H_seq, nrow = m, ncol = 2 * (nvar + 1), byrow = FALSE)
 
   if (!identical(as.integer(result$ierr), 0L)) {
     ierr_value <- as.integer(result$ierr)
-    reason <- if (identical(ierr_value, 1L)) "ppro_cert_failed" else "fortran_ierr"
-    t_failed <- infer_failed_time(H_seq)
-    info <- list(ierr = ierr_value)
+    reason <- failure_reason_from_ierr(ierr_value)
+    failed_eval_value <- as.integer(result$failed_eval)
+    t_failed <- backend_failed_time()
+    info <- list(
+      ierr = ierr_value,
+      failed_eval = failed_eval_value,
+      backend_ierr = ierr_value,
+      backend_failed_eval = failed_eval_value,
+      failure_source = "fortran"
+    )
     acceptance_diagnostics[[t_failed]] <- list(
       time = t_failed,
       reason = reason,
-      ierr = ierr_value
+      ierr = ierr_value,
+      failed_eval = failed_eval_value
     )
     if (isTRUE(fallback)) {
       return(finish_with_seq_fallback(t_failed, reason, info))
@@ -1649,49 +1685,63 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     ))
   }
 
-  if (isTRUE(store_residual)) {
-    A_base <- cbind(1, x)
-    A_full <- cbind(A_base, A_base * ((seq_len(m) / m)))
-    p <- 2 * (nvar + 1)
-    for (eva_t in seq_len(m)) {
-      H_candidate <- as.integer(H_seq[eva_t, ])
-      r_vec <- residual_est[eva_t, ]
-      zero_idx <- which(abs(r_vec) <= 1e-8)
-      candidate_H_in_range <- length(H_candidate) == p &&
-        !anyNA(H_candidate) &&
-        !any(H_candidate < 1L | H_candidate > m) &&
-        !anyDuplicated(H_candidate)
-      candidate_rank_ok <- candidate_H_in_range &&
-        (qr(A_full[H_candidate, , drop = FALSE], tol = 1e-10)$rank == p)
-      candidate_zero_ok <- candidate_H_in_range &&
-        all(abs(r_vec[H_candidate]) <= 1e-8)
-      candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
-      candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
-      if (!(candidate_H_valid && candidate_in_zero_set)) {
-        reason <- if (!candidate_H_valid) "candidate_H_invalid" else "candidate_not_in_zero_set"
-        info <- list(
-          time = eva_t,
-          H_candidate = H_candidate,
-          candidate_H_valid = candidate_H_valid,
-          candidate_in_zero_set = candidate_in_zero_set,
-          H_recovered_from_full = zero_idx
-        )
-        acceptance_diagnostics[[eva_t]] <- c(list(reason = reason), info)
-        if (isTRUE(fallback)) {
-          return(finish_with_seq_fallback(eva_t, reason, info))
-        }
-        return(fail_ppro_suffix(
-          t_start = eva_t,
-          reason = reason,
-          info = info,
-          theta_value = theta_ll_est,
-          it_value = result$it_num,
-          residual_value = residual_est,
-          M_value = result$M_out,
-          n_sub_value = result$n_sub,
-          H_value = H_seq
-        ))
+  A_base <- cbind(1, x)
+  A_full <- cbind(A_base, A_base * ((seq_len(m) / m)))
+  p <- 2 * (nvar + 1)
+  for (eva_t in seq_len(m)) {
+    H_candidate <- as.integer(H_seq[eva_t, ])
+    r_vec <- residual_est_backend[eva_t, ]
+    zero_idx <- which(abs(r_vec) <= residual_tol)
+    candidate_H_in_range <- length(H_candidate) == p &&
+      !anyNA(H_candidate) &&
+      !any(H_candidate < 1L | H_candidate > m) &&
+      !anyDuplicated(H_candidate)
+    candidate_rank_ok <- candidate_H_in_range &&
+      (qr(A_full[H_candidate, , drop = FALSE], tol = rank_tol)$rank == p)
+    candidate_zero_ok <- candidate_H_in_range &&
+      all(abs(r_vec[H_candidate]) <= residual_tol)
+    candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
+    candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
+    if (!(candidate_H_valid && candidate_in_zero_set)) {
+      reason <- if (!candidate_H_in_range) {
+        "candidate_H_invalid"
+      } else if (!candidate_rank_ok) {
+        "candidate_H_singular"
+      } else if (!candidate_H_valid) {
+        "candidate_H_invalid"
+      } else {
+        "candidate_not_in_zero_set"
       }
+      info <- list(
+        ierr = 0L,
+        failed_eval = as.integer(eva_t),
+        backend_ierr = as.integer(result$ierr),
+        backend_failed_eval = as.integer(result$failed_eval),
+        failure_source = "wrapper_certification",
+        time = eva_t,
+        H_candidate = H_candidate,
+        candidate_H_in_range = candidate_H_in_range,
+        candidate_rank_ok = candidate_rank_ok,
+        candidate_zero_ok = candidate_zero_ok,
+        candidate_H_valid = candidate_H_valid,
+        candidate_in_zero_set = candidate_in_zero_set,
+        H_recovered_from_full = zero_idx
+      )
+      acceptance_diagnostics[[eva_t]] <- c(list(reason = reason), info)
+      if (isTRUE(fallback)) {
+        return(finish_with_seq_fallback(eva_t, reason, info))
+      }
+      return(fail_ppro_suffix(
+        t_start = eva_t,
+        reason = reason,
+        info = info,
+        theta_value = theta_ll_est,
+        it_value = result$it_num,
+        residual_value = residual_est,
+        M_value = result$M_out,
+        n_sub_value = result$n_sub,
+        H_value = H_seq
+      ))
     }
   }
   
@@ -1706,4 +1756,108 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     H_value = H_seq,
     returned_backend = "ppro"
   ))
+}
+
+compare_tvcqr_ppro_strict <- function(fit_r, fit_f, tol_theta = 1e-8, tol_resid = 1e-6) {
+  same_int_vec <- function(a, b) {
+    a <- as.integer(a)
+    b <- as.integer(b)
+    length(a) == length(b) && all((is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b))
+  }
+
+  h_row_set_equal <- function(a, b) {
+    a <- as.integer(a)
+    b <- as.integer(b)
+    if (length(a) != length(b) || anyNA(a) || anyNA(b)) {
+      return(FALSE)
+    }
+    identical(sort(a), sort(b))
+  }
+
+  null_or_na <- function(x) {
+    is.null(x) || length(x) == 0L || all(is.na(x))
+  }
+
+  theta_diff <- suppressWarnings(max(abs(fit_r$theta_ll_est - fit_f$theta_ll_est), na.rm = TRUE))
+  if (!is.finite(theta_diff)) {
+    theta_diff <- NA_real_
+  }
+  theta_ok <- isTRUE(!is.na(theta_diff) && theta_diff <= tol_theta)
+
+  H_r <- fit_r$H_seq
+  H_f <- fit_f$H_seq
+  H_dim_ok <- identical(dim(H_r), dim(H_f))
+  ordered_H_ok <- H_dim_ok && isTRUE(all.equal(H_r, H_f, tolerance = 0, check.attributes = FALSE))
+  H_ordered_mismatches <- if (H_dim_ok) {
+    which(rowSums(H_r != H_f, na.rm = FALSE) > 0L)
+  } else {
+    seq_len(max(nrow(H_r), nrow(H_f)))
+  }
+  H_row_set_mismatches <- if (H_dim_ok) {
+    which(!vapply(seq_len(nrow(H_r)), function(i) h_row_set_equal(H_r[i, ], H_f[i, ]), logical(1)))
+  } else {
+    seq_len(max(nrow(H_r), nrow(H_f)))
+  }
+  H_row_set_ok <- H_dim_ok && length(H_row_set_mismatches) == 0L
+
+  n_sub_ok <- same_int_vec(fit_r$n_sub, fit_f$n_sub)
+  n_sub_mismatches <- if (length(fit_r$n_sub) == length(fit_f$n_sub)) {
+    which(!((is.na(fit_r$n_sub) & is.na(fit_f$n_sub)) |
+              (!is.na(fit_r$n_sub) & !is.na(fit_f$n_sub) & fit_r$n_sub == fit_f$n_sub)))
+  } else {
+    seq_len(max(length(fit_r$n_sub), length(fit_f$n_sub)))
+  }
+
+  it_num_ok <- same_int_vec(fit_r$it_num, fit_f$it_num)
+  it_num_mismatches <- if (length(fit_r$it_num) == length(fit_f$it_num)) {
+    which(!((is.na(fit_r$it_num) & is.na(fit_f$it_num)) |
+              (!is.na(fit_r$it_num) & !is.na(fit_f$it_num) & fit_r$it_num == fit_f$it_num)))
+  } else {
+    seq_len(max(length(fit_r$it_num), length(fit_f$it_num)))
+  }
+
+  residual_compared <- !is.null(fit_r$residual_est) && !is.null(fit_f$residual_est)
+  residual_max_diff <- NA_real_
+  residual_ok <- NA
+  if (residual_compared) {
+    residual_max_diff <- suppressWarnings(max(abs(fit_r$residual_est - fit_f$residual_est), na.rm = TRUE))
+    if (!is.finite(residual_max_diff)) {
+      residual_max_diff <- NA_real_
+    }
+    residual_ok <- isTRUE(!is.na(residual_max_diff) && residual_max_diff <= tol_resid)
+  }
+
+  backend_ok <- identical(fit_r$returned_backend, "ppro") && identical(fit_f$returned_backend, "ppro")
+  backend_ierr_ok <- is.null(fit_f$backend_ierr) || identical(as.integer(fit_f$backend_ierr), 0L)
+  failure_reason_ok <- null_or_na(fit_r$failure_reason) && null_or_na(fit_f$failure_reason)
+
+  blocking_pass <- theta_ok &&
+    ordered_H_ok &&
+    H_row_set_ok &&
+    n_sub_ok &&
+    backend_ok &&
+    backend_ierr_ok &&
+    failure_reason_ok &&
+    (!isTRUE(residual_compared) || isTRUE(residual_ok))
+
+  list(
+    blocking_pass = blocking_pass,
+    diagnostics_pass = blocking_pass && it_num_ok,
+    theta_ok = theta_ok,
+    max_theta_diff = theta_diff,
+    ordered_H_ok = ordered_H_ok,
+    ordered_H_mismatches = H_ordered_mismatches,
+    H_row_set_ok = H_row_set_ok,
+    H_row_set_mismatches = H_row_set_mismatches,
+    n_sub_ok = n_sub_ok,
+    n_sub_mismatches = n_sub_mismatches,
+    it_num_ok = it_num_ok,
+    it_num_mismatches = it_num_mismatches,
+    residual_compared = residual_compared,
+    residual_ok = residual_ok,
+    residual_max_diff = residual_max_diff,
+    backend_ok = backend_ok,
+    backend_ierr_ok = backend_ierr_ok,
+    failure_reason_ok = failure_reason_ok
+  )
 }

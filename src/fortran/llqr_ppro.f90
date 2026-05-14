@@ -120,13 +120,14 @@ end function max_array
 
 ! Main PPRO subroutine
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
-                             Mm_factor, case_int, bland_int, ll_est, d_ll_est, it_num, &
-                             residual_est, H_mat, ierr)
+                             Mm_factor, case_int, bland_int, min_subsample_size_in, &
+                             ll_est, d_ll_est, it_num, residual_est, H_mat, n_sub_out, &
+                             ierr, failed_eval)
 
     implicit none
 
     ! Input arguments
-    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int
+    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int, min_subsample_size_in
     double precision, intent(in) :: x(m), y(m), z(rounds), tau, tol, Mm_factor
     double precision, intent(inout) :: h
 
@@ -136,7 +137,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer, intent(out) :: it_num(rounds)
     double precision, intent(out) :: residual_est(rounds, m)
     integer, intent(out) :: H_mat(rounds, nvar+1)
+    integer, intent(out) :: n_sub_out(rounds)
     integer, intent(out) :: ierr
+    integer, intent(out) :: failed_eval
 
     ! Local variables for full problem (round 1)
     double precision :: A(m, nvar+1)     ! Design matrix [1, x]
@@ -153,6 +156,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     double precision :: yy(m+1), ee(m+1), k_vals(m+1)
     double precision :: u(m), v(m), estimate(nvar+1)
     integer :: i, j, k, rd, iter, t_rr, tsep, t, jj
+    integer :: iter_total, iter_attempt, remaining
     integer :: idx_r1_minus_offset
     double precision :: rrl, min_k, pi, pivot_row_value
     logical :: bland
@@ -165,6 +169,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: n_bad_signs
     logical :: not_optimal, not_new_sl_sh  ! Bad signs loop control
     logical :: force_full_sample, no_pivot_flag, accept_subsample
+    logical :: simplex_converged
     integer :: empty_pivot_count, max_empty_pivot_retries
     double precision :: res_tol
 
@@ -181,8 +186,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     double precision :: bs_temp(m+2)
     integer :: idx_not_jl_or_jh(m)
     integer :: n_subsample, n_potential_S
-    integer :: min_subsample_size
-    double precision :: r(m)
+    integer :: min_subsample_size, min_subsample_size_effective
+    double precision :: r(m), r_raw(m)
+    double precision :: ll_candidate, d_ll_candidate
+    integer :: H_candidate(nvar+1)
+    integer :: h_failure_code
+    logical :: h_map_ok
+    logical :: cert_reject_return
 
     ! Z-sorting variables (CRITICAL FIX: match R's z-sorting behavior)
     double precision :: z_sorted(rounds)
@@ -191,6 +201,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: it_num_sorted(rounds)
     double precision :: residual_est_sorted(rounds, m)
     integer :: H_mat_sorted(rounds, nvar+1)
+    integer :: n_sub_sorted(rounds)
 
     ! Warm start variables (for rd==2)
     double precision :: xh(nvar+1, nvar+1)
@@ -240,9 +251,18 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     ! Constants
     pi = 4.0d0 * atan(1.0d0)
     bland = (bland_int /= 0)
-    res_tol = 1.0d-8
+    res_tol = 1.0d-6
     max_empty_pivot_retries = 3
     ierr = 0
+    failed_eval = 0
+    n_sub_out = 0
+    n_sub_sorted = 0
+
+    if (min_subsample_size_in > 0) then
+        min_subsample_size_effective = min_subsample_size_in
+    else
+        min_subsample_size_effective = max(5*(nvar + 1), ceiling(0.2d0 * dble(m)))
+    end if
 
     ! Set default bandwidth
     if (h <= 0.0d0) then
@@ -284,12 +304,14 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     end do
 
     ! Match R llqr_seq_ppro threshold order by data-generation case
-    if (case_int == 1) then
+    if (case_int == 1 .or. case_int == 3) then
         mm = log(log(dble(m))) / sqrt(log(dble(m)))
-    else if (case_int == 2) then
+    else if (case_int == 2 .or. case_int == 4) then
         mm = sqrt(log(dble(m))) * dble(m)**(-0.4d0)
     else
-        mm = log(log(dble(m))) / sqrt(log(dble(m)))
+        ierr = 5
+        failed_eval = 1
+        return
     end if
 
     ! ============================================================
@@ -300,7 +322,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     ! Compute kernel weights for first z (USING SORTED Z!)
     do i = 1, m
         eva_z(i) = z_sorted(rd) - x(i)
-        w(i) = exp(-0.5d0 * (eva_z(i)/h)**2) / sqrt(2.0d0 * pi)
+        w(i) = llqr_kernel_weight(eva_z(i) / h, case_int, pi)
     end do
 
     ! Initialize gammax from design matrix
@@ -369,10 +391,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         end do
     end do
 
-    ! Run simplex for round 1 (using PPRO simplex which also works for cold start)
-    call run_simplex_ppro(gammax, b, IB, freevarrow, r1, r2, rr, w, m+1, m, nvar, &
-                          tau, tol, maxit, bland, iter, no_pivot_flag)
-    if (no_pivot_flag) iter = maxit
+    ! Run the full cold-start simplex for round 1.
+    call run_simplex_full_llqr(gammax, b, IB, freevarrow, r1, r2, rr, w, m+1, m, nvar, &
+                               tau, tol, maxit, bland, iter, no_pivot_flag, simplex_converged)
+    if (no_pivot_flag .or. (.not. simplex_converged)) then
+        call set_failure(2)
+        return
+    end if
 
     ! Extract solution for round 1
     call extract_solution(gammax, b, IB, m, nvar, estimate, u, v, r1)
@@ -383,6 +408,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     it_num_sorted(rd) = iter
     residual_est_sorted(rd, :) = u - v
     H_mat_sorted(rd, :) = r1 - 1 - nvar
+    n_sub_sorted(rd) = m
+    n_sub_out(z_order(rd)) = m
 
     ! BUG FIX: Do NOT sort H_mat for rd=1!
     ! R code keeps H in simplex order: H <- r1 - 1 - nvar (no sort)
@@ -400,11 +427,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         force_full_sample = .false.
         empty_pivot_count = 0
         mmm = mm
+        iter_total = 0
 
         ! Compute kernel weights for current z (USING SORTED Z!)
         do i = 1, m
             eva_z(i) = z_sorted(rd) - x(i)
-            w(i) = exp(-0.5d0 * (eva_z(i)/h)**2) / sqrt(2.0d0 * pi)
+            w(i) = llqr_kernel_weight(eva_z(i) / h, case_int, pi)
         end do
 
         ! BAD SIGNS OUTER LOOP: Keep trying until solution is good
@@ -413,12 +441,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! ========================================================
             ! Step 1: Compute M threshold from previous residuals
             ! ========================================================
+            r = residual_est_sorted(rd-1, :)
             if (not_new_sl_sh) then
-                r = residual_est_sorted(rd-1, :)
                 residual_scale = median_abs(r, m)
                 M_threshold = max(Mm_factor * mmm * log(log(dble(m))), 0.1d0 * residual_scale)
 
-                min_subsample_size = max(5*(nvar + 1), ceiling(0.2d0 * dble(m)))
+                min_subsample_size = min_subsample_size_effective
 
                 ! OPTIMIZATION: Compute max_r once instead of in loop
                 min_k = maxval(abs(r))
@@ -432,27 +460,31 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 do i = 1, m
                     sl(i) = r(i) < -M_threshold
                     sh(i) = r(i) > M_threshold
-                    not_jl_or_jh(i) = .not. (sl(i) .or. sh(i))
-                end do
-
-
-                ! Force H observations into subsample (S)
-                H_prev = H_mat_sorted(rd-1, :)
-                do i = 1, nvar+1
-                    if (H_prev(i) > 0 .and. H_prev(i) <= m) then
-                        if (sl(H_prev(i)) .or. sh(H_prev(i))) then
-                            sl(H_prev(i)) = .false.
-                            sh(H_prev(i)) = .false.
-                            not_jl_or_jh(H_prev(i)) = .true.
-                        end if
-                    end if
                 end do
             end if
 
+            ! Force H observations into the retained subsample every attempt,
+            ! including after few-bad-sign repairs.
+            H_prev = H_mat_sorted(rd-1, :)
             if (force_full_sample) then
                 sl = .false.
                 sh = .false.
                 not_jl_or_jh = .true.
+            else
+                do i = 1, m
+                    not_jl_or_jh(i) = .not. (sl(i) .or. sh(i))
+                end do
+                do i = 1, nvar+1
+                    if (H_prev(i) < 1 .or. H_prev(i) > m) then
+                        call set_failure(3)
+                        return
+                    end if
+                    if (sl(H_prev(i)) .or. sh(H_prev(i))) then
+                        sl(H_prev(i)) = .false.
+                        sh(H_prev(i)) = .false.
+                        not_jl_or_jh(H_prev(i)) = .true.
+                    end if
+                end do
             end if
 
         ! Count subsample size
@@ -557,6 +589,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 end do
                 if (H_subsample(i) == 0) then
+                    call set_failure(3)
                     return
                 end if
             end do
@@ -572,6 +605,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             call inv22(xh, xhinv, inv_success)
 
             if (.not. inv_success) then
+                call set_failure(4)
                 return
             end if
 
@@ -648,9 +682,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 P(n_idpos + n_idneg + 1) = -1.0d0  ! sl aggregate gets -1
                 P(n_idpos + n_idneg + 2) = 1.0d0   ! sh aggregate gets +1
             else if (any(sl)) then
-                P(n_idpos + n_idneg + 1) = 1.0d0   ! Only sl: gets +1? Check R code
+                P(n_idpos + n_idneg + 1) = -1.0d0  ! sl aggregate gets -1
             else if (any(sh)) then
-                P(n_idpos + n_idneg + 1) = -1.0d0  ! Only sh: gets -1? Check R code
+                P(n_idpos + n_idneg + 1) = 1.0d0   ! sh aggregate gets +1
             end if
 
 !DEBUG             write(*,*) '=== FORTRAN Round 2 Warm Start ==='
@@ -911,9 +945,20 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
             ! Pass m+1-sized work arrays because the simplex stores the objective row
             ! at row mv+1 even when mv == m.
+            remaining = maxit - iter_total
+            if (remaining <= 0) then
+                call set_failure(2)
+                return
+            end if
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m + 1, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
-            if (no_pivot_flag) then
+                                  m + 1, ms, nvar, tau, tol, remaining, bland, iter_attempt, no_pivot_flag, &
+                                  simplex_converged)
+            iter_total = iter_total + iter_attempt
+            if (no_pivot_flag .or. (.not. simplex_converged)) then
+                if (force_full_sample) then
+                    call set_failure(2)
+                    return
+                end if
                 empty_pivot_count = empty_pivot_count + 1
                 mmm = mmm * 2.0d0
                 not_new_sl_sh = .true.
@@ -931,24 +976,19 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                                   u_subsample, v_subsample, r1s)
 
 
-            ! Compute ll_est and d_ll_est (STORE IN SORTED ARRAYS!)
-            ll_est_sorted(rd) = estimate(1) + estimate(2) * z_sorted(rd)
-            d_ll_est_sorted(rd) = estimate(2)
-            it_num_sorted(rd) = iter
+            ll_candidate = estimate(1) + estimate(2) * z_sorted(rd)
+            d_ll_candidate = estimate(2)
 
-            ! Compute FULL residuals for all observations (needed for next point's subsample selection)
-            ! R code line 836: r <- y - A %*% estimate
+            ! Compute raw full residuals for candidate verification.
             do i = 1, m
-                r(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
             end do
 
-            ! Map H back to full indices
-            ! R code line 857: H <- r1 - 1 - nvar
-            ! R code line 858: H <- idx_not_jl_or_jh[H]
-            ! No conditional fallback - always map through idx_not_jl_or_jh
-            do i = 1, nvar+1
-                H_mat_sorted(rd, i) = idx_not_jl_or_jh(r1s(i) - nvar - 1)
-            end do
+            call map_candidate_H(h_map_ok, h_failure_code)
+            if (.not. h_map_ok) then
+                call set_failure(h_failure_code)
+                return
+            end if
 
             ! DEBUG: Print H values and solution for rd=2
 !DEBUG            if (rd == 2) then
@@ -976,22 +1016,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! end if
 
 
-            ! Set H residuals to 0 (R code line 856: r[H] <- 0)
-            do i = 1, nvar+1
-                if (H_mat_sorted(rd, i) > 0 .and. H_mat_sorted(rd, i) <= m) then
-                    r(H_mat_sorted(rd, i)) = 0.0d0
-                end if
-            end do
-
-            ! Store full residuals (needed for next point's subsample selection)
-            residual_est_sorted(rd, :) = r
-
-            ! Check for bad signs (R's fixup logic)
+            ! Check bad signs and certify using raw residuals.
             if (count(sl) > 0 .or. count(sh) > 0) then
-                ! Check bad signs
                 n_bad_signs = 0
                 do i = 1, m
-                    if ((sh(i) .and. r(i) < 0.0d0) .or. (sl(i) .and. r(i) > 0.0d0)) then
+                    if ((sh(i) .and. r_raw(i) < 0.0d0) .or. (sl(i) .and. r_raw(i) > 0.0d0)) then
                         n_bad_signs = n_bad_signs + 1
                     end if
                 end do
@@ -1006,180 +1035,52 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     else
                         ! Few bad signs: remove them from sl/sh and retry
                         do i = 1, m
-                            if (sh(i) .and. r(i) < 0.0d0) sh(i) = .false.
-                            if (sl(i) .and. r(i) > 0.0d0) sl(i) = .false.
+                            if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
+                            if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
                         end do
                         not_new_sl_sh = .false.
                         ! Continue while loop - will rebuild with adjusted sl/sh
                     end if
                 else
-                    ! No bad signs: success!
-                    ! Store xhinv and Hbar information for next round (rd>2 will reuse)
-                    ! R code lines 860-876: gammaxs.temp[1:(nvar+1),] <- gammaxs[1:(nvar+1),]
-                    do i = 1, nvar+1
-                        do j = 1, nvar+1
-                            xhinv_stored(i, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_stored(i) = bs_simplex(i)
-                    end do
-
-                    ! Store Hbar rows separated by sign (for rd>2 incremental update)
-                    ! R: ms.org <- ms - any(sl) - any(sh)
-                    ms_org = ms
-                    if (any(sl)) ms_org = ms_org - 1
-                    if (any(sh)) ms_org = ms_org - 1
-
-                    ! DEBUG: Print for rd=2
-!DEBUG                    if (rd == 2) then
-!DEBUG                        write(*,*) '=== STORAGE at rd=2 (with sl/sh) ==='
-!DEBUG                        write(*,*) 'ms:', ms
-!DEBUG                        write(*,*) 'ms_org:', ms_org
-!DEBUG                        write(*,*) 'any(sl):', any(sl)
-!DEBUG                        write(*,*) 'any(sh):', any(sh)
-!DEBUG                        write(*,*) 'IBs[nvar+2]:', IBs(nvar+2)
-!DEBUG                        write(*,*) 'IBs[nvar+3]:', IBs(nvar+3)
-!DEBUG                        write(*,*) 'IBs[nvar+4]:', IBs(nvar+4)
-!DEBUG                    end if
-
-                    ! Extract and separate Hbar rows by sign (R lines 864-875)
-                    n_pos_prev = 0
-                    n_neg_prev = 0
-                    do i = nvar+2, ms_org
-                        ! Determine if this row is u (positive) or v (negative)
-                        ! R: id_gammaxs_Hbar <- IBs[(nvar+2):ms.org]
-                        ! R: p_Hbar <- ifelse(id_gammaxs_Hbar > nvar+1+ms, -1, 1)
-                        if (IBs(i) > nvar + 1 + ms) then
-                            ! This is a v variable (negative residual)
-                            n_neg_prev = n_neg_prev + 1
-                            ! Get original data index
-                            ! R: id_gammaxs_Hbar <- ifelse(..., id - nvar - 1 - ms, id - nvar - 1)
-                            curr_idx = IBs(i) - nvar - 1 - ms
-                            idx_Hbar_neg(n_neg_prev) = idx_not_jl_or_jh(curr_idx)
-                            ! Store the tableau row
-                            do j = 1, nvar+1
-                                gammaxs_neg(n_neg_prev, j) = gammaxs_simplex(i, j)
-                            end do
-                            bs_neg(n_neg_prev) = bs_simplex(i)
-                        else
-                            ! This is a u variable (positive residual)
-                            n_pos_prev = n_pos_prev + 1
-                            ! Get original data index
-                            curr_idx = IBs(i) - nvar - 1
-                            idx_Hbar_pos(n_pos_prev) = idx_not_jl_or_jh(curr_idx)
-
-                            ! DEBUG: Print first few stored values for rd=2
-!DEBUG                            if (rd == 2 .and. n_pos_prev <= 5) then
-!DEBUG                                write(*,'(A,I2,A,I5,A,I5,A,I5,A,I5)') '  Storing pos row ', n_pos_prev, &
-!DEBUG                                    ': IBs(', i, ')=', IBs(i), ', curr_idx=', curr_idx, &
-!DEBUG                                    ', idx_Hbar_pos=', idx_Hbar_pos(n_pos_prev)
-!DEBUG                            end if
-
-                            ! Store the tableau row
-                            do j = 1, nvar+1
-                                gammaxs_pos(n_pos_prev, j) = gammaxs_simplex(i, j)
-                            end do
-                            bs_pos(n_pos_prev) = bs_simplex(i)
-                        end if
-                    end do
-
-                    ! DEBUG: Print summary for rd=2
-!DEBUG                    if (rd == 2) then
-!DEBUG                        write(*,*) 'Stored n_pos_prev:', n_pos_prev
-!DEBUG                        write(*,*) 'Stored n_neg_prev:', n_neg_prev
-!DEBUG                        if (n_pos_prev > 0) write(*,*) 'idx_Hbar_pos (first 5):', idx_Hbar_pos(1:min(5, n_pos_prev))
-!DEBUG                        if (n_neg_prev > 0) write(*,*) 'idx_Hbar_neg (first 5):', idx_Hbar_neg(1:min(5, n_neg_prev))
-!DEBUG                    end if
-
-                    accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                    accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
                     if (accept_subsample) then
+                        ll_est_sorted(rd) = ll_candidate
+                        d_ll_est_sorted(rd) = d_ll_candidate
+                        it_num_sorted(rd) = iter_total
+                        n_sub_sorted(rd) = ms
+                        n_sub_out(z_order(rd)) = ms
+                        H_mat_sorted(rd, :) = H_candidate
+                        r = r_raw
+                        do i = 1, nvar+1
+                            r(H_candidate(i)) = 0.0d0
+                        end do
+                        residual_est_sorted(rd, :) = r
+                        call store_current_cache()
                         not_optimal = .false.
                     else
-                        if ((.not. any(sl)) .and. (.not. any(sh))) then
-                            ierr = 1
-                            write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
-                            return
-                        end if
-                        mmm = mmm * 2.0d0
-                        not_new_sl_sh = .true.
+                        call handle_certification_reject(cert_reject_return)
+                        if (cert_reject_return) return
                     end if
                 end if
             else
-                ! No sl or sh: automatically good
-                ! Store xhinv and Hbar information for next round
-                do i = 1, nvar+1
-                    do j = 1, nvar+1
-                        xhinv_stored(i, j) = gammaxs_simplex(i, j)
-                    end do
-                    bs_stored(i) = bs_simplex(i)
-                end do
-
-                ! Store Hbar rows separated by sign
-                ! R line 863: ms.org <- ms - any(sl) - any(sh)
-                ms_org = ms
-                if (any(sl)) ms_org = ms_org - 1
-                if (any(sh)) ms_org = ms_org - 1
-                n_pos_prev = 0
-                n_neg_prev = 0
-
-                ! DEBUG: Print for rd=2
-!DEBUG                if (rd == 2) then
-!DEBUG                    write(*,*) '=== STORAGE at rd=2 ==='
-!DEBUG                    write(*,*) 'ms:', ms
-!DEBUG                    write(*,*) 'ms_org:', ms_org
-!DEBUG                    write(*,*) 'any(sl):', any(sl)
-!DEBUG                    write(*,*) 'any(sh):', any(sh)
-!DEBUG                    write(*,*) 'IBs[nvar+2]:', IBs(nvar+2)
-!DEBUG                    write(*,*) 'IBs[nvar+3]:', IBs(nvar+3)
-!DEBUG                    write(*,*) 'IBs[nvar+4]:', IBs(nvar+4)
-!DEBUG                end if
-
-                do i = nvar+2, ms_org
-                    if (IBs(i) > nvar + 1 + ms) then
-                        n_neg_prev = n_neg_prev + 1
-                        curr_idx = IBs(i) - nvar - 1 - ms
-                        idx_Hbar_neg(n_neg_prev) = idx_not_jl_or_jh(curr_idx)
-                        do j = 1, nvar+1
-                            gammaxs_neg(n_neg_prev, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_neg(n_neg_prev) = bs_simplex(i)
-                    else
-                        n_pos_prev = n_pos_prev + 1
-                        curr_idx = IBs(i) - nvar - 1
-                        idx_Hbar_pos(n_pos_prev) = idx_not_jl_or_jh(curr_idx)
-
-                        ! DEBUG: Print first few stored values for rd=2
-!DEBUG                        if (rd == 2 .and. n_pos_prev <= 5) then
-!DEBUG                            write(*,'(A,I2,A,I5,A,I5,A,I5)') '  Storing pos row ', n_pos_prev, &
-!DEBUG                                ': IBs(', i, ')=', IBs(i), ', curr_idx=', curr_idx, &
-!DEBUG                                ', idx_Hbar_pos=', idx_Hbar_pos(n_pos_prev)
-!DEBUG                        end if
-
-                        do j = 1, nvar+1
-                            gammaxs_pos(n_pos_prev, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_pos(n_pos_prev) = bs_simplex(i)
-                    end if
-                end do
-
-                ! DEBUG: Print summary for rd=2
-!DEBUG                if (rd == 2) then
-!DEBUG                    write(*,*) 'Stored n_pos_prev:', n_pos_prev
-!DEBUG                    write(*,*) 'Stored n_neg_prev:', n_neg_prev
-!DEBUG                    if (n_pos_prev > 0) write(*,*) 'idx_Hbar_pos (first 5):', idx_Hbar_pos(1:min(5, n_pos_prev))
-!DEBUG                    if (n_neg_prev > 0) write(*,*) 'idx_Hbar_neg (first 5):', idx_Hbar_neg(1:min(5, n_neg_prev))
-!DEBUG                end if
-
-                accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
                 if (accept_subsample) then
+                    ll_est_sorted(rd) = ll_candidate
+                    d_ll_est_sorted(rd) = d_ll_candidate
+                    it_num_sorted(rd) = iter_total
+                    n_sub_sorted(rd) = ms
+                    n_sub_out(z_order(rd)) = ms
+                    H_mat_sorted(rd, :) = H_candidate
+                    r = r_raw
+                    do i = 1, nvar+1
+                        r(H_candidate(i)) = 0.0d0
+                    end do
+                    residual_est_sorted(rd, :) = r
+                    call store_current_cache()
                     not_optimal = .false.
                 else
-                    if ((.not. any(sl)) .and. (.not. any(sh))) then
-                        ierr = 1
-                        write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
-                        return
-                    end if
-                    mmm = mmm * 2.0d0
-                    not_new_sl_sh = .true.
+                    call handle_certification_reject(cert_reject_return)
+                    if (cert_reject_return) return
                 end if
             end if
 
@@ -1205,6 +1106,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 end do
                 if (H_subsample(i) == 0) then
+                    call set_failure(3)
                     return
                 end if
             end do
@@ -1717,9 +1619,20 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             end do
 
             ! Run simplex (same as rd==2)
+            remaining = maxit - iter_total
+            if (remaining <= 0) then
+                call set_failure(2)
+                return
+            end if
             call run_simplex_ppro(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
-                                  m + 1, ms, nvar, tau, tol, maxit, bland, iter, no_pivot_flag)
-            if (no_pivot_flag) then
+                                  m + 1, ms, nvar, tau, tol, remaining, bland, iter_attempt, no_pivot_flag, &
+                                  simplex_converged)
+            iter_total = iter_total + iter_attempt
+            if (no_pivot_flag .or. (.not. simplex_converged)) then
+                if (force_full_sample) then
+                    call set_failure(2)
+                    return
+                end if
                 empty_pivot_count = empty_pivot_count + 1
                 mmm = mmm * 2.0d0
                 not_new_sl_sh = .true.
@@ -1733,38 +1646,25 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             call extract_solution(gammaxs_simplex, bs_simplex, IBs, ms, nvar, estimate, &
                                   u_subsample, v_subsample, r1s)
 
-            ! Store results (same as rd==2)
-            ll_est_sorted(rd) = estimate(1) + estimate(2) * z_sorted(rd)
-            d_ll_est_sorted(rd) = estimate(2)
-            it_num_sorted(rd) = iter
+            ll_candidate = estimate(1) + estimate(2) * z_sorted(rd)
+            d_ll_candidate = estimate(2)
 
-            ! Compute full residuals (same as rd==2)
+            ! Compute raw full residuals for candidate verification.
             do i = 1, m
-                r(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
             end do
 
-            ! Map H back to full indices (exactly as rd==2 and R)
-            ! R code: H <- r1 - 1 - nvar; H <- idx_not_jl_or_jh[H]
-            ! NO fallback to H_prev - always use r1s unconditionally
-            do i = 1, nvar+1
-                H_mat_sorted(rd, i) = idx_not_jl_or_jh(r1s(i) - nvar - 1)
-            end do
+            call map_candidate_H(h_map_ok, h_failure_code)
+            if (.not. h_map_ok) then
+                call set_failure(h_failure_code)
+                return
+            end if
 
-            ! Set H residuals to 0 (same as rd==2)
-            do i = 1, nvar+1
-                if (H_mat_sorted(rd, i) > 0 .and. H_mat_sorted(rd, i) <= m) then
-                    r(H_mat_sorted(rd, i)) = 0.0d0
-                end if
-            end do
-
-            ! Store full residuals
-            residual_est_sorted(rd, :) = r
-
-            ! Check for bad signs (same as rd==2)
+            ! Check bad signs and certify using raw residuals.
             if (count(sl) > 0 .or. count(sh) > 0) then
                 n_bad_signs = 0
                 do i = 1, m
-                    if ((sh(i) .and. r(i) < 0.0d0) .or. (sl(i) .and. r(i) > 0.0d0)) then
+                    if ((sh(i) .and. r_raw(i) < 0.0d0) .or. (sl(i) .and. r_raw(i) > 0.0d0)) then
                         n_bad_signs = n_bad_signs + 1
                     end if
                 end do
@@ -1775,102 +1675,51 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         not_new_sl_sh = .true.
                     else
                         do i = 1, m
-                            if (sh(i) .and. r(i) < 0.0d0) sh(i) = .false.
-                            if (sl(i) .and. r(i) > 0.0d0) sl(i) = .false.
+                            if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
+                            if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
                         end do
                         not_new_sl_sh = .false.
                     end if
                 else
-                    ! No bad signs: success! Store for next round
-                    do i = 1, nvar+1
-                        do j = 1, nvar+1
-                            xhinv_stored(i, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_stored(i) = bs_simplex(i)
-                    end do
-
-                    ms_org = ms
-                    if (any(sl)) ms_org = ms_org - 1
-                    if (any(sh)) ms_org = ms_org - 1
-
-                    n_pos_prev = 0
-                    n_neg_prev = 0
-                    do i = nvar+2, ms_org
-                        if (IBs(i) > nvar + 1 + ms) then
-                            n_neg_prev = n_neg_prev + 1
-                            curr_idx = IBs(i) - nvar - 1 - ms
-                            idx_Hbar_neg(n_neg_prev) = idx_not_jl_or_jh(curr_idx)
-                            do j = 1, nvar+1
-                                gammaxs_neg(n_neg_prev, j) = gammaxs_simplex(i, j)
-                            end do
-                            bs_neg(n_neg_prev) = bs_simplex(i)
-                        else
-                            n_pos_prev = n_pos_prev + 1
-                            curr_idx = IBs(i) - nvar - 1
-                            idx_Hbar_pos(n_pos_prev) = idx_not_jl_or_jh(curr_idx)
-                            do j = 1, nvar+1
-                                gammaxs_pos(n_pos_prev, j) = gammaxs_simplex(i, j)
-                            end do
-                            bs_pos(n_pos_prev) = bs_simplex(i)
-                        end if
-                    end do
-
-                    accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                    accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
                     if (accept_subsample) then
+                        ll_est_sorted(rd) = ll_candidate
+                        d_ll_est_sorted(rd) = d_ll_candidate
+                        it_num_sorted(rd) = iter_total
+                        n_sub_sorted(rd) = ms
+                        n_sub_out(z_order(rd)) = ms
+                        H_mat_sorted(rd, :) = H_candidate
+                        r = r_raw
+                        do i = 1, nvar+1
+                            r(H_candidate(i)) = 0.0d0
+                        end do
+                        residual_est_sorted(rd, :) = r
+                        call store_current_cache()
                         not_optimal = .false.
                     else
-                        if ((.not. any(sl)) .and. (.not. any(sh))) then
-                            ierr = 1
-                            write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
-                            return
-                        end if
-                        mmm = mmm * 2.0d0
-                        not_new_sl_sh = .true.
+                        call handle_certification_reject(cert_reject_return)
+                        if (cert_reject_return) return
                     end if
                 end if
             else
-                ! No sl or sh: automatically good, store for next round
-                do i = 1, nvar+1
-                    do j = 1, nvar+1
-                        xhinv_stored(i, j) = gammaxs_simplex(i, j)
-                    end do
-                    bs_stored(i) = bs_simplex(i)
-                end do
-
-                ms_org = ms
-                n_pos_prev = 0
-                n_neg_prev = 0
-                do i = nvar+2, ms_org
-                    if (IBs(i) > nvar + 1 + ms) then
-                        n_neg_prev = n_neg_prev + 1
-                        curr_idx = IBs(i) - nvar - 1 - ms
-                        idx_Hbar_neg(n_neg_prev) = idx_not_jl_or_jh(curr_idx)
-                        do j = 1, nvar+1
-                            gammaxs_neg(n_neg_prev, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_neg(n_neg_prev) = bs_simplex(i)
-                    else
-                        n_pos_prev = n_pos_prev + 1
-                        curr_idx = IBs(i) - nvar - 1
-                        idx_Hbar_pos(n_pos_prev) = idx_not_jl_or_jh(curr_idx)
-                        do j = 1, nvar+1
-                            gammaxs_pos(n_pos_prev, j) = gammaxs_simplex(i, j)
-                        end do
-                        bs_pos(n_pos_prev) = bs_simplex(i)
-                    end if
-                end do
-
-                accept_subsample = certify_llqr_candidate(H_mat_sorted(rd, :), r, A, m, nvar, res_tol)
+                accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
                 if (accept_subsample) then
+                    ll_est_sorted(rd) = ll_candidate
+                    d_ll_est_sorted(rd) = d_ll_candidate
+                    it_num_sorted(rd) = iter_total
+                    n_sub_sorted(rd) = ms
+                    n_sub_out(z_order(rd)) = ms
+                    H_mat_sorted(rd, :) = H_candidate
+                    r = r_raw
+                    do i = 1, nvar+1
+                        r(H_candidate(i)) = 0.0d0
+                    end do
+                    residual_est_sorted(rd, :) = r
+                    call store_current_cache()
                     not_optimal = .false.
                 else
-                    if ((.not. any(sl)) .and. (.not. any(sh))) then
-                        ierr = 1
-                        write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
-                        return
-                    end if
-                    mmm = mmm * 2.0d0
-                    not_new_sl_sh = .true.
+                    call handle_certification_reject(cert_reject_return)
+                    if (cert_reject_return) return
                 end if
             end if
 
@@ -1889,6 +1738,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         ll_est(k) = ll_est_sorted(rd)
         d_ll_est(k) = d_ll_est_sorted(rd)
         it_num(k) = it_num_sorted(rd)
+        n_sub_out(k) = n_sub_sorted(rd)
         do i = 1, m
             residual_est(k, i) = residual_est_sorted(rd, i)
         end do
@@ -1898,6 +1748,129 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     end do
 
 contains
+
+    double precision function llqr_kernel_weight(u_val, case_val, pi_val)
+        implicit none
+        double precision, intent(in) :: u_val, pi_val
+        integer, intent(in) :: case_val
+
+        if (case_val == 3 .or. case_val == 4) then
+            if (abs(u_val) <= 1.0d0) then
+                llqr_kernel_weight = 0.75d0 * (1.0d0 - u_val * u_val)
+            else
+                llqr_kernel_weight = 0.0d0
+            end if
+        else
+            llqr_kernel_weight = exp(-0.5d0 * u_val * u_val) / sqrt(2.0d0 * pi_val)
+        end if
+    end function llqr_kernel_weight
+
+    logical function terminal_cert_failure()
+        implicit none
+
+        terminal_cert_failure = (ms >= m) .or. ((.not. any(sl)) .and. (.not. any(sh))) .or. force_full_sample
+    end function terminal_cert_failure
+
+    subroutine handle_certification_reject(should_return)
+        implicit none
+        logical, intent(out) :: should_return
+
+        if (terminal_cert_failure()) then
+            call set_failure(1)
+            write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
+            should_return = .true.
+        else
+            mmm = mmm * 2.0d0
+            not_new_sl_sh = .true.
+            should_return = .false.
+        end if
+    end subroutine handle_certification_reject
+
+    subroutine store_current_cache()
+        implicit none
+        integer :: si, sj, sms_org, scurr_idx
+
+        do si = 1, nvar+1
+            do sj = 1, nvar+1
+                xhinv_stored(si, sj) = gammaxs_simplex(si, sj)
+            end do
+            bs_stored(si) = bs_simplex(si)
+        end do
+
+        sms_org = ms
+        if (any(sl)) sms_org = sms_org - 1
+        if (any(sh)) sms_org = sms_org - 1
+
+        n_pos_prev = 0
+        n_neg_prev = 0
+        do si = nvar+2, sms_org
+            if (IBs(si) > nvar + 1 + ms) then
+                n_neg_prev = n_neg_prev + 1
+                scurr_idx = IBs(si) - nvar - 1 - ms
+                idx_Hbar_neg(n_neg_prev) = idx_not_jl_or_jh(scurr_idx)
+                do sj = 1, nvar+1
+                    gammaxs_neg(n_neg_prev, sj) = gammaxs_simplex(si, sj)
+                end do
+                bs_neg(n_neg_prev) = bs_simplex(si)
+            else
+                n_pos_prev = n_pos_prev + 1
+                scurr_idx = IBs(si) - nvar - 1
+                idx_Hbar_pos(n_pos_prev) = idx_not_jl_or_jh(scurr_idx)
+                do sj = 1, nvar+1
+                    gammaxs_pos(n_pos_prev, sj) = gammaxs_simplex(si, sj)
+                end do
+                bs_pos(n_pos_prev) = bs_simplex(si)
+            end if
+        end do
+    end subroutine store_current_cache
+
+    subroutine set_failure(code)
+        implicit none
+        integer, intent(in) :: code
+
+        ierr = code
+        if (rd >= 1 .and. rd <= rounds) then
+            failed_eval = rd
+            H_mat_sorted(rd, :) = 0
+        else
+            failed_eval = 1
+        end if
+    end subroutine set_failure
+
+    subroutine map_candidate_H(success, failure_code)
+        implicit none
+        logical, intent(out) :: success
+        integer, intent(out) :: failure_code
+        integer :: mi, mj, reduced_idx
+
+        success = .false.
+        failure_code = 0
+        H_candidate = 0
+
+        do mi = 1, nvar+1
+            reduced_idx = r1s(mi) - nvar - 1
+            if (reduced_idx < 1 .or. reduced_idx > n_subsample) then
+                failure_code = 5
+                return
+            end if
+            H_candidate(mi) = idx_not_jl_or_jh(reduced_idx)
+            if (H_candidate(mi) < 1 .or. H_candidate(mi) > m) then
+                failure_code = 3
+                return
+            end if
+        end do
+
+        do mi = 1, nvar+1
+            do mj = mi + 1, nvar+1
+                if (H_candidate(mi) == H_candidate(mj)) then
+                    failure_code = 3
+                    return
+                end if
+            end do
+        end do
+
+        success = .true.
+    end subroutine map_candidate_H
 
     logical function certify_llqr_candidate(H_idx, r_vec, A_mat, m_loc, nvar_loc, res_tol_loc)
         implicit none
@@ -1937,9 +1910,8 @@ contains
         end do
     end function certify_llqr_candidate
 
-    ! PPRO-specific simplex algorithm (matches R's llqr_tau_seq_ppro lines 731-831)
-    subroutine run_simplex_ppro(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, ldgx, mv, nvr, &
-                                tv, tl, mxit, bld, iters, no_pivot)
+    subroutine run_simplex_full_llqr(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, ldgx, mv, nvr, &
+                                     tv, tl, mxit, bld, iters, no_pivot, converged)
         implicit none
         integer, intent(in) :: ldgx, mv, nvr, mxit
         double precision, intent(inout) :: gx(ldgx, nvr+1), bv(mv+1)
@@ -1949,9 +1921,8 @@ contains
         double precision, intent(in) :: wv(mv), tv, tl
         logical, intent(in) :: bld
         integer, intent(out) :: iters
-        logical, intent(out) :: no_pivot
+        logical, intent(out) :: no_pivot, converged
 
-        ! Local variables
         double precision :: yyv(mv+1), eev(mv+1), k_valsv(mv+1)
         integer :: ii, jj, kk, t_rrv, tsepv, tv_val
         integer :: idx_offset
@@ -1959,6 +1930,219 @@ contains
 
         iters = 0
         no_pivot = .false.
+        converged = .false.
+        t_rrv = 1
+        tsepv = 1
+        tv_val = 0
+
+        do while (iters < mxit)
+            do ii = 1, nvr+1
+                rrv(1, ii) = gx(mv+1, ii)
+                if (r2v(ii) /= 0) then
+                    idx_offset = r1v(ii) - 1 - nvr
+                    if (idx_offset >= 1 .and. idx_offset <= mv) then
+                        rrv(2, ii) = wv(idx_offset) - rrv(1, ii)
+                    else
+                        rrv(2, ii) = -rrv(1, ii)
+                    end if
+                else
+                    rrv(2, ii) = 0.0d0
+                    rrv(1, ii) = -abs(rrv(1, ii))
+                end if
+            end do
+
+            rrlv = minval(rrv)
+            if (rrlv >= -tl) then
+                converged = .true.
+                exit
+            end if
+
+            if (bld) then
+                if (any(rrv(1,:) < -tl)) then
+                    tv_val = huge(1)
+                    do ii = 1, nvr+1
+                        if (rrv(1,ii) < -tl .and. r1v(ii) < tv_val) then
+                            tv_val = r1v(ii)
+                            t_rrv = ii
+                            tsepv = 1
+                        end if
+                    end do
+                else
+                    tv_val = huge(1)
+                    do ii = 1, nvr+1
+                        if (rrv(2,ii) < -tl .and. r2v(ii) < tv_val) then
+                            tv_val = r2v(ii)
+                            t_rrv = ii
+                            tsepv = 2
+                        end if
+                    end do
+                end if
+            else
+                do jj = 1, nvr+1
+                    do ii = 1, 2
+                        if (abs(rrv(ii,jj) - rrlv) < tl) then
+                            t_rrv = jj
+                            tsepv = ii
+                            if (tsepv == 1) then
+                                tv_val = r1v(t_rrv)
+                            else
+                                tv_val = r2v(t_rrv)
+                            end if
+                            goto 200
+                        end if
+                    end do
+                end do
+200             continue
+            end if
+
+            if (r2v(t_rrv) /= 0) then
+                if (tsepv == 1) then
+                    do ii = 1, mv+1
+                        yyv(ii) = gx(ii, t_rrv)
+                    end do
+                else
+                    do ii = 1, mv+1
+                        yyv(ii) = -gx(ii, t_rrv)
+                    end do
+                end if
+
+                min_kv = huge(1.0d0)
+                kk = 0
+                do ii = 1, mv+1
+                    if (yyv(ii) > tl .and. .not. fvr(ii)) then
+                        k_valsv(ii) = bv(ii) / yyv(ii)
+                        if (k_valsv(ii) < min_kv - tl) then
+                            min_kv = k_valsv(ii)
+                            kk = ii
+                        else if (abs(k_valsv(ii) - min_kv) < tl .and. bld) then
+                            if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                        end if
+                    end if
+                end do
+
+                if (kk == 0) then
+                    no_pivot = .true.
+                    exit
+                end if
+
+                if (tsepv /= 1) then
+                    idx_offset = r1v(t_rrv) - 1 - nvr
+                    if (idx_offset >= 1 .and. idx_offset <= mv) then
+                        yyv(mv+1) = yyv(mv+1) + wv(idx_offset)
+                    end if
+                end if
+            else
+                do ii = 1, mv+1
+                    yyv(ii) = gx(ii, t_rrv)
+                end do
+
+                min_kv = huge(1.0d0)
+                kk = 0
+                if (yyv(mv+1) < 0.0d0) then
+                    do ii = 1, mv+1
+                        if (yyv(ii) > tl .and. .not. fvr(ii)) then
+                            k_valsv(ii) = bv(ii) / yyv(ii)
+                            if (k_valsv(ii) < min_kv - tl) then
+                                min_kv = k_valsv(ii)
+                                kk = ii
+                            else if (abs(k_valsv(ii) - min_kv) < tl .and. bld) then
+                                if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                            end if
+                        end if
+                    end do
+                else
+                    do ii = 1, mv+1
+                        if (yyv(ii) < -tl .and. .not. fvr(ii)) then
+                            k_valsv(ii) = -bv(ii) / yyv(ii)
+                            if (k_valsv(ii) < min_kv - tl) then
+                                min_kv = k_valsv(ii)
+                                kk = ii
+                            else if (abs(k_valsv(ii) - min_kv) < tl .and. bld) then
+                                if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                            end if
+                        end if
+                    end do
+                end if
+
+                if (kk == 0) then
+                    no_pivot = .true.
+                    exit
+                end if
+                fvr(kk) = .true.
+            end if
+
+            do ii = 1, mv+1
+                if (ii == kk) then
+                    eev(ii) = 1.0d0 - 1.0d0 / yyv(kk)
+                else
+                    eev(ii) = yyv(ii) / yyv(kk)
+                end if
+            end do
+
+            if (IBv(kk) <= (mv + nvr + 1)) then
+                do ii = 1, mv+1
+                    gx(ii, t_rrv) = 0.0d0
+                end do
+                gx(kk, t_rrv) = 1.0d0
+                r1v(t_rrv) = IBv(kk)
+                r2v(t_rrv) = IBv(kk) + mv
+            else
+                do ii = 1, mv+1
+                    gx(ii, t_rrv) = 0.0d0
+                end do
+                gx(kk, t_rrv) = -1.0d0
+                idx_offset = IBv(kk) - mv - nvr - 1
+                if (idx_offset >= 1 .and. idx_offset <= mv) then
+                    gx(mv+1, t_rrv) = wv(idx_offset)
+                end if
+                r1v(t_rrv) = IBv(kk) - mv
+                r2v(t_rrv) = IBv(kk)
+            end if
+
+            do jj = 1, nvr+1
+                pivot_val = gx(kk, jj)
+                do ii = 1, mv+1
+                    gx(ii, jj) = gx(ii, jj) - eev(ii) * pivot_val
+                end do
+            end do
+
+            pivot_val = bv(kk)
+            do ii = 1, mv+1
+                bv(ii) = bv(ii) - eev(ii) * pivot_val
+            end do
+
+            IBv(kk) = tv_val
+            iters = iters + 1
+        end do
+    end subroutine run_simplex_full_llqr
+
+    ! PPRO-specific simplex algorithm (matches R's llqr_tau_seq_ppro lines 731-831)
+    subroutine run_simplex_ppro(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, ldgx, mv, nvr, &
+                                tv, tl, mxit, bld, iters, no_pivot, converged)
+        implicit none
+        integer, intent(in) :: ldgx, mv, nvr, mxit
+        double precision, intent(inout) :: gx(ldgx, nvr+1), bv(mv+1)
+        integer, intent(inout) :: IBv(mv+1), r1v(nvr+1), r2v(nvr+1)
+        logical, intent(inout) :: fvr(mv+1)
+        double precision, intent(inout) :: rrv(2, nvr+1)
+        double precision, intent(in) :: wv(mv), tv, tl
+        logical, intent(in) :: bld
+        integer, intent(out) :: iters
+        logical, intent(out) :: no_pivot, converged
+
+        ! Local variables
+        double precision :: yyv(mv+1), eev(mv+1), k_valsv(mv+1)
+        integer :: ii, jj, kk, t_rrv, tsepv, tv_val
+        integer :: best_var_id, best_col
+        integer :: idx_offset
+        double precision :: rrlv, min_kv, pivot_val
+
+        iters = 0
+        no_pivot = .false.
+        converged = .false.
+        t_rrv = 1
+        tsepv = 1
+        tv_val = 0
 
 
         do while (iters < mxit)
@@ -1990,36 +2174,40 @@ contains
             ! Check optimality
             rrlv = minval(rrv)
             if (rrlv >= -tl) then
+                converged = .true.
                 exit
             end if
 
             ! Step 3: Choose entering variable
             if (bld) then
-                ! Bland's rule implementation
+                ! Bland's rule: match R by choosing the smallest eligible variable id.
+                best_var_id = huge(1)
+                best_col = 0
                 if (any(rrv(1,:) < -tl)) then
-                    do ii = 1, nvr+1
-                        if (rrv(1,ii) < -tl) then
-                            tv_val = r1v(ii)
-                            t_rrv = ii
-                            tsepv = 1
-                            exit
-                        end if
-                    end do
-                else
-                    do ii = 1, nvr+1
-                        if (rrv(2,ii) < -tl) then
-                            tv_val = r2v(ii)
-                            t_rrv = ii
-                            tsepv = 2
-                            exit
-                        end if
-                    end do
-                end if
-            else
-                ! Standard rule: most negative
-                do ii = 1, 2
                     do jj = 1, nvr+1
-                        if (abs(rrv(ii,jj) - rrlv) < tl) then
+                        if (rrv(1,jj) < -tl .and. r1v(jj) < best_var_id) then
+                            best_var_id = r1v(jj)
+                            best_col = jj
+                        end if
+                    end do
+                    tsepv = 1
+                else
+                    do jj = 1, nvr+1
+                        if (rrv(2,jj) < -tl .and. r2v(jj) < best_var_id) then
+                            best_var_id = r2v(jj)
+                            best_col = jj
+                        end if
+                    end do
+                    tsepv = 2
+                end if
+                t_rrv = best_col
+                tv_val = best_var_id
+            else
+                ! Standard rule: match R's which(rr == min(rr), arr.ind=TRUE)[1,]
+                ! scan order for a 2 x p matrix: column outer, row inner.
+                do jj = 1, nvr+1
+                    do ii = 1, 2
+                        if (rrv(ii,jj) == rrlv) then
                             t_rrv = jj
                             tsepv = ii
                             if (tsepv == 1) then

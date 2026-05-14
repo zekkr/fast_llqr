@@ -649,7 +649,7 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
 # Sequential plus preprocessing algorithm for one-dim LLQR
 # ============================================================================ #
 llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1e6, 
-                              Mm.factor = 1, bland = F, track_order = F, 
+                              Mm.factor = 1e-3, bland = F, track_order = F,
                               case = 1, h.factor = 1, min_subsample_size = NULL,
                               store_residual = FALSE,
                               fallback = FALSE,
@@ -1679,7 +1679,6 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
                      h = as.double(h),
                      tol = as.double(tol),
                      maxit = as.integer(maxit),
-                     case_int = as.integer(case),
                      bland_int = as.integer(bland),
                      ll_est = as.double(ll_est),
                      d_ll_est = as.double(d_ll_est),
@@ -1710,12 +1709,14 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
 # ============================================================================ #
 llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                                       Mm.factor = 1e-3, case = 1, h.factor = 1, tol = 1e-14,
-                                      maxit = 1e6, bland = TRUE,
+                                      maxit = 1e6, bland = FALSE,
                                       track_order = FALSE,
                                       fallback = FALSE,
                                       return_raw_backend = FALSE,
                                       debug_trace = FALSE,
-                                      debug_rounds = NULL) {
+                                      debug_rounds = NULL,
+                                      min_subsample_size = NULL,
+                                      store_residual = FALSE) {
   ensure_llqr_fortran_library_loaded("llqr_ppro.so")
   case <- llqr_validate_case(case)
   h.factor <- llqr_validate_h_factor(h.factor)
@@ -1790,6 +1791,17 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   }
 
   h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
+  residual_tol <- 1e-6
+
+  if (is.null(min_subsample_size)) {
+    min_subsample_size_in <- max(5L * (nvar + 1L), ceiling(0.2 * m))
+  } else {
+    min_subsample_size_in <- as.integer(ceiling(as.numeric(min_subsample_size)))
+    if (length(min_subsample_size_in) != 1L || is.na(min_subsample_size_in) ||
+        !is.finite(min_subsample_size_in) || min_subsample_size_in <= 0L) {
+      stop("min_subsample_size must be a positive finite scalar or NULL.")
+    }
+  }
 
   bland_int <- if (bland) 1L else 0L
   
@@ -1808,12 +1820,15 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      Mm_factor = as.double(Mm.factor),
                      case_int = as.integer(case),
                      bland_int = as.integer(bland_int),
+                     min_subsample_size_in = as.integer(min_subsample_size_in),
                      ll_est = double(rounds),
                      d_ll_est = double(rounds),
                      it_num = integer(rounds),
                      residual_est = matrix(0.0, nrow = rounds, ncol = m),
                      H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1),
-                     ierr = integer(1))
+                     n_sub_out = integer(rounds),
+                     ierr = integer(1),
+                     failed_eval = integer(1))
 
   raw_backend <- list(
     ll_est = as.numeric(result$ll_est),
@@ -1822,9 +1837,10 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     residual_est = result$residual_est,
     H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1),
     M = NA_real_,
-    n_sub = rep(NA_integer_, rounds),
+    n_sub = as.integer(result$n_sub_out),
     z = z,
-    ierr = as.integer(result$ierr)
+    ierr = as.integer(result$ierr),
+    failed_eval = as.integer(result$failed_eval)
   )
 
   make_return <- function(ll_est_value, d_ll_est_value, it_num_value, residual_est_value,
@@ -1838,12 +1854,13 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       ll_est_out <- ll_est_out[order(original_order)]
       d_ll_est_out <- d_ll_est_out[order(original_order)]
     }
+    residual_est_out <- if (isTRUE(store_residual)) residual_est_value else NULL
 
     list(
       ll_est = ll_est_out,
       d_ll_est = d_ll_est_out,
       it_num = as.integer(it_num_value),
-      residual_est = residual_est_value,
+      residual_est = residual_est_out,
       H_seq = H_seq_value,
       h = h,
       M = NA_real_,
@@ -1945,11 +1962,28 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     1L
   }
 
+  backend_failed_round <- function() {
+    rd_backend <- as.integer(result$failed_eval)
+    if (length(rd_backend) == 1L && !is.na(rd_backend) &&
+        rd_backend >= 1L && rd_backend <= rounds) {
+      return(rd_backend)
+    }
+    infer_failed_round(raw_backend$H_seq)
+  }
+
   if (!identical(as.integer(result$ierr), 0L)) {
     ierr_value <- as.integer(result$ierr)
-    reason <- if (identical(ierr_value, 1L)) "ppro_cert_failed" else "fortran_ierr"
-    rd_failed <- infer_failed_round(raw_backend$H_seq)
-    info <- list(ierr = ierr_value)
+    reason <- switch(
+      as.character(ierr_value),
+      "1" = "ppro_cert_failed",
+      "2" = "ppro_simplex_nonconverged",
+      "3" = "candidate_H_invalid",
+      "4" = "candidate_H_singular",
+      "5" = "fortran_invariant_violation",
+      "fortran_ierr"
+    )
+    rd_failed <- backend_failed_round()
+    info <- list(ierr = ierr_value, failed_eval = as.integer(result$failed_eval))
     acceptance_diagnostics[[rd_failed]] <- list(
       round = rd_failed,
       reason = reason,
@@ -1965,7 +1999,7 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   d_ll_est_raw <- raw_backend$d_ll_est
   H_seq_raw <- raw_backend$H_seq
   residual_est_raw <- raw_backend$residual_est
-  n_sub <- rep(NA_integer_, rounds)
+  n_sub <- raw_backend$n_sub
   A <- cbind(1, x)
 
   for (rd in seq_len(rounds)) {
@@ -1985,7 +2019,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       A = A,
       y = y,
       w = w,
-      tau = tau
+      tau = tau,
+      residual_tol = residual_tol
     )
     certification_log[[rd]] <- cert_record
     append_round_attempt(
