@@ -1490,6 +1490,50 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
         residual_tol = residual_tol,
         rank_tol = rank_tol
       )
+      cert_initial <- cert
+      cert_refit <- NULL
+      refit_attempted <- FALSE
+      refit_recovered <- FALSE
+      H_refit_eligible <- (bad.signs == 0) &&
+        !isTRUE(cert$cert_ok) &&
+        length(H_candidate) == (nvar + 1) &&
+        !anyNA(H_candidate) &&
+        !any(H_candidate < 1L | H_candidate > nrow(A)) &&
+        !anyDuplicated(H_candidate)
+      if (isTRUE(H_refit_eligible)) {
+        H_refit_rank_ok <- qr(A[H_candidate, , drop = FALSE], tol = rank_tol)$rank == ncol(A)
+        if (isTRUE(H_refit_rank_ok)) {
+          refit_attempted <- TRUE
+          estimate_refit <- tryCatch(
+            as.numeric(solve(A[H_candidate, , drop = FALSE], y[H_candidate])),
+            error = function(e) NULL
+          )
+          if (!is.null(estimate_refit) &&
+              length(estimate_refit) == (nvar + 1) &&
+              all(is.finite(estimate_refit))) {
+            cert_refit <- certify_llqr_candidate_full(
+              estimate_candidate = estimate_refit,
+              H_candidate = H_candidate,
+              A = A,
+              y = y,
+              w = w,
+              tau = tau,
+              residual_tol = residual_tol,
+              rank_tol = rank_tol
+            )
+            if (isTRUE(cert_refit$cert_ok)) {
+              estimate <- estimate_refit
+              r <- cert_refit$residual
+              bs[1:(nvar + 1)] <- estimate_refit
+              sh.bad <- (r < 0) & sh
+              sl.bad <- (r > 0) & sl
+              bad.signs <- sum(sh.bad | sl.bad)
+              cert <- cert_refit
+              refit_recovered <- bad.signs == 0
+            }
+          }
+        }
+      }
       accept_subsample <- (bad.signs == 0) && isTRUE(cert$cert_ok)
       append_round_attempt(
         rd = rd,
@@ -1510,7 +1554,11 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
           estimate_candidate = as.numeric(estimate),
           bad_signs = bad.signs,
           local_accept = accept_subsample,
-          certification = cert
+          certification = cert,
+          certification_initial = cert_initial,
+          certification_refit = cert_refit,
+          refit_attempted = refit_attempted,
+          refit_recovered = refit_recovered
         )
       )
       if (!accept_subsample) {
@@ -1542,7 +1590,11 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
             sl_idx = which(sl),
             sh_idx = which(sh),
             idx_not_jl_or_jh = idx_not_jl_or_jh,
-            certification = cert
+            certification = cert,
+            certification_initial = cert_initial,
+            certification_refit = cert_refit,
+            refit_attempted = refit_attempted,
+            refit_recovered = refit_recovered
           )
           if ((ms >= m) || (!any(sl) && !any(sh)) || isTRUE(force_full_sample)) {
             acceptance_diagnostics[[rd]] <- c(

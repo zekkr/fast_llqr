@@ -125,6 +125,13 @@ When verification fails, the solver must not return the failed reduced solution.
 
 After any threshold or set change, all dependent quantities must be recomputed. Reusing stale aggregate rows or stale counts is a correctness bug.
 
+When a candidate has no bad signs and the same reported `H` rows are in range,
+distinct, and full rank, a ppro implementation may take one numerical rescue
+step before rejection: refit the estimate from that same `H`, then run
+certification once more. This same-`H` refit is only a stabilization step; it
+must not change `H`, relax tolerances, bypass certification, or replace the
+existing reject, expand, or fallback path if recertification still fails.
+
 ## Certified ppro output
 
 A ppro output is certified only if one of the following holds:

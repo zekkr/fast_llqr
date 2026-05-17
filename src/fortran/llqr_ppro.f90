@@ -193,6 +193,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: h_failure_code
     logical :: h_map_ok
     logical :: cert_reject_return
+    logical :: refit_recertified
 
     ! Z-sorting variables (CRITICAL FIX: match R's z-sorting behavior)
     double precision :: z_sorted(rounds)
@@ -1043,7 +1044,22 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 else
                     accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                    if (accept_subsample) then
+                    if (.not. accept_subsample) then
+                        call try_same_h_refit(refit_recertified)
+                        if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
+                    end if
+                    if (n_bad_signs > 0) then
+                        if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
+                            mmm = mmm * 2.0d0
+                            not_new_sl_sh = .true.
+                        else
+                            do i = 1, m
+                                if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
+                                if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                            end do
+                            not_new_sl_sh = .false.
+                        end if
+                    else if (accept_subsample) then
                         ll_est_sorted(rd) = ll_candidate
                         d_ll_est_sorted(rd) = d_ll_candidate
                         it_num_sorted(rd) = iter_total
@@ -1064,6 +1080,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end if
             else
                 accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
+                if (.not. accept_subsample) then
+                    call try_same_h_refit(refit_recertified)
+                    if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
+                end if
                 if (accept_subsample) then
                     ll_est_sorted(rd) = ll_candidate
                     d_ll_est_sorted(rd) = d_ll_candidate
@@ -1682,7 +1702,22 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 else
                     accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                    if (accept_subsample) then
+                    if (.not. accept_subsample) then
+                        call try_same_h_refit(refit_recertified)
+                        if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
+                    end if
+                    if (n_bad_signs > 0) then
+                        if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
+                            mmm = mmm * 2.0d0
+                            not_new_sl_sh = .true.
+                        else
+                            do i = 1, m
+                                if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
+                                if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                            end do
+                            not_new_sl_sh = .false.
+                        end if
+                    else if (accept_subsample) then
                         ll_est_sorted(rd) = ll_candidate
                         d_ll_est_sorted(rd) = d_ll_candidate
                         it_num_sorted(rd) = iter_total
@@ -1703,6 +1738,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end if
             else
                 accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
+                if (.not. accept_subsample) then
+                    call try_same_h_refit(refit_recertified)
+                    if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
+                end if
                 if (accept_subsample) then
                     ll_est_sorted(rd) = ll_candidate
                     d_ll_est_sorted(rd) = d_ll_candidate
@@ -1909,6 +1948,68 @@ contains
             end if
         end do
     end function certify_llqr_candidate
+
+    subroutine try_same_h_refit(recertified)
+        implicit none
+        logical, intent(out) :: recertified
+        double precision :: xh_refit(nvar+1, nvar+1)
+        double precision :: xhinv_refit(nvar+1, nvar+1)
+        double precision :: estimate_refit(nvar+1)
+        double precision :: det2_refit
+        logical :: inv_success_refit
+        integer :: ri, rj
+
+        recertified = .false.
+
+        do ri = 1, nvar + 1
+            if (H_candidate(ri) < 1 .or. H_candidate(ri) > m) return
+            do rj = ri + 1, nvar + 1
+                if (H_candidate(ri) == H_candidate(rj)) return
+            end do
+        end do
+
+        if (nvar /= 1) return
+
+        do ri = 1, nvar + 1
+            do rj = 1, nvar + 1
+                xh_refit(ri, rj) = A(H_candidate(ri), rj)
+            end do
+        end do
+
+        det2_refit = xh_refit(1, 1) * xh_refit(2, 2) - xh_refit(1, 2) * xh_refit(2, 1)
+        if (abs(det2_refit) <= 1.0d-10) return
+
+        call inv22(xh_refit, xhinv_refit, inv_success_refit)
+        if (.not. inv_success_refit) return
+
+        do ri = 1, nvar + 1
+            estimate_refit(ri) = 0.0d0
+            do rj = 1, nvar + 1
+                estimate_refit(ri) = estimate_refit(ri) + xhinv_refit(ri, rj) * y(H_candidate(rj))
+            end do
+        end do
+
+        do ri = 1, m
+            r_raw(ri) = y(ri) - (A(ri, 1) * estimate_refit(1) + A(ri, 2) * estimate_refit(2))
+        end do
+
+        n_bad_signs = 0
+        do ri = 1, m
+            if ((sh(ri) .and. r_raw(ri) < 0.0d0) .or. (sl(ri) .and. r_raw(ri) > 0.0d0)) then
+                n_bad_signs = n_bad_signs + 1
+            end if
+        end do
+
+        if (.not. certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)) return
+
+        estimate = estimate_refit
+        do ri = 1, nvar + 1
+            bs_simplex(ri) = estimate_refit(ri)
+        end do
+        ll_candidate = estimate(1) + estimate(2) * z_sorted(rd)
+        d_ll_candidate = estimate(2)
+        recertified = .true.
+    end subroutine try_same_h_refit
 
     subroutine run_simplex_full_llqr(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, ldgx, mv, nvr, &
                                      tv, tl, mxit, bld, iters, no_pivot, converged)
