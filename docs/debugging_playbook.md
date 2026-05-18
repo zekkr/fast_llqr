@@ -43,7 +43,7 @@ Accepting nonconverged simplex states: A reduced solve that reaches `maxit`, has
 
 Zero-weight observations: Local kernels can produce zero weights. Confirm zero-weight rows do not enter aggregates or basis comparisons in a way that changes the effective LP.
 
-Bounded-kernel positive-support degeneracy: For LLQR bounded-kernel cases, record `sum(w > 0)`, `which(w > 0)`, `qr(A[w > 0, , drop = FALSE])$rank`, `h`, `case`, `seed`, and the traceback line at the first failing `rd`. If the positive-weight count is below `q` or the positive-weight design rank is below `q`, diagnose a full-sample local LP degeneracy before attributing the failure to `Mm.factor`, screening, or `H_seq` mismatch.
+Bounded-kernel positive-support degeneracy: For LLQR case 2, record `sum(w > 0)`, `which(w > 0)`, `qr(A[w > 0, , drop = FALSE])$rank`, `h`, `case`, `seed`, and the traceback line at the first failing `rd`. If the positive-weight count is below `q` or the positive-weight design rank is below `q`, diagnose a full-sample local LP degeneracy before attributing the failure to `Mm.factor`, screening, or `H_seq` mismatch.
 
 Tolerance and tie-breaking differences: Compare tolerances, Bland-rule settings, pivot tie handling, and near-zero residual classification. A row near the threshold should be treated as uncertain rather than certified.
 

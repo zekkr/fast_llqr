@@ -111,7 +111,7 @@ Verification: The post-solve check over all omitted observations. Verification d
 
 ## Bounded-kernel local LP degeneracy
 
-LLQR cases that use a bounded kernel can have an evaluation point with too few positive-weight observations to define the local LP. For one-dimensional LLQR, `q = nvar + 1 = 2`, so an evaluation point with only one positive-weight observation has an effective design that is rank deficient before any ppro screening is applied.
+LLQR case 2 uses a bounded Epanechnikov kernel and can have an evaluation point with too few positive-weight observations to define the local LP. For one-dimensional LLQR, `q = nvar + 1 = 2`, so an evaluation point with only one positive-weight observation has an effective design that is rank deficient before any ppro screening is applied.
 
 This is a full-sample local LP degeneracy, not a screened-ppro certification failure. Enlarging or doubling the screening threshold can add more explicit rows from the screened problem, but it cannot create positive kernel weights outside the bounded kernel support. Such a case must not be silently accepted as ppro success. A recovery path must either report an explicit failure or use an explicit fallback branch with recorded provenance.
 

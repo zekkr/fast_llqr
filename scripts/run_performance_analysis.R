@@ -63,7 +63,7 @@ if (FALSE) {
 
 if (FALSE) {
   # Configuration
-  cases <- c(1, 2, 3)
+  cases <- c(1, 2)
   tau_values <- c(0.2, 0.5, 0.8)
   sample_sizes <- c(200, 500, 1000, 2000)
   num_replications <- 500

@@ -37,6 +37,7 @@ n        <- as_int("FASTQR_N", 500)
 num_rep  <- as_int("FASTQR_NUM_REP", 500)
 
 Mm.factor <- as_num_vec("FASTQR_MM_FACTOR", c(1e-2, 1e-3, 1e-4))
+h.factor  <- as_num("FASTQR_H_FACTOR", 1)
 tol       <- as_num("FASTQR_TOL", 1e-14)
 maxit     <- as_int("FASTQR_MAXIT", 2e6)
 bland     <- as_bool("FASTQR_BLAND", FALSE)
@@ -51,6 +52,7 @@ config <- list(
   n = n,
   num_rep = num_rep,
   h = NULL,
+  h.factor = h.factor,
   z = NULL,
   tol = tol,
   maxit = maxit,

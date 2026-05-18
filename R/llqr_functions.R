@@ -7,10 +7,9 @@ generate_data <- function(n, case = 1, seed = NULL){
   }
 
   case <- llqr_validate_case(case)
-  dgp_case <- if (case %in% c(3L, 4L)) case - 2L else case
-  if(dgp_case == 1){
+  if(case == 1L){
     x <- rnorm(n)
-  } else if(dgp_case == 2){
+  } else if(case == 2L){
     x <- runif(n)
   }
   
@@ -51,8 +50,8 @@ llqr_validate_case <- function(case) {
   case_num <- suppressWarnings(as.numeric(case))
   if (length(case_num) != 1L || is.na(case_num) ||
       !is.finite(case_num) || case_num != floor(case_num) ||
-      !(case_num %in% 1:4)) {
-    stop("Invalid LLQR case specification. Use 1, 2, 3, or 4.")
+      !(case_num %in% 1:2)) {
+    stop("Invalid LLQR case specification. Use 1 or 2.")
   }
   as.integer(case_num)
 }
@@ -67,13 +66,13 @@ llqr_validate_h_factor <- function(h.factor) {
 }
 
 llqr_uses_epanechnikov <- function(case) {
-  llqr_validate_case(case) %in% c(3L, 4L)
+  llqr_validate_case(case) == 2L
 }
 
 llqr_kernel_weights <- function(u, case = 1) {
   case <- llqr_validate_case(case)
   u <- as.numeric(u)
-  if (case %in% c(3L, 4L)) {
+  if (case == 2L) {
     w <- numeric(length(u))
     inside <- abs(u) <= 1
     w[inside] <- 0.75 * (1 - u[inside]^2)
@@ -98,7 +97,7 @@ llqr_default_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor = 1) 
     return(h)
   }
 
-  if (case %in% c(3L, 4L)) {
+  if (case == 2L) {
     return(as.numeric(h.factor * m^(-0.2)))
   }
 
@@ -114,7 +113,7 @@ llqr_default_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor = 1) 
 
 llqr_threshold_scale <- function(m, case = 1) {
   case <- llqr_validate_case(case)
-  if (case %in% c(1L, 3L)) {
+  if (case == 1L) {
     return(log(log(m)) / sqrt(log(m)))
   }
   log(m)^(1/2) * m^(-2/5)
@@ -1731,6 +1730,7 @@ llqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 
                      h = as.double(h),
                      tol = as.double(tol),
                      maxit = as.integer(maxit),
+                     case_int = as.integer(case),
                      bland_int = as.integer(bland),
                      ll_est = as.double(ll_est),
                      d_ll_est = as.double(d_ll_est),

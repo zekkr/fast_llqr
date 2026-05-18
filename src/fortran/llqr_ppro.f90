@@ -305,9 +305,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     end do
 
     ! Match R llqr_seq_ppro threshold order by data-generation case
-    if (case_int == 1 .or. case_int == 3) then
+    if (case_int == 1) then
         mm = log(log(dble(m))) / sqrt(log(dble(m)))
-    else if (case_int == 2 .or. case_int == 4) then
+    else if (case_int == 2) then
         mm = sqrt(log(dble(m))) * dble(m)**(-0.4d0)
     else
         ierr = 5
@@ -1793,7 +1793,7 @@ contains
         double precision, intent(in) :: u_val, pi_val
         integer, intent(in) :: case_val
 
-        if (case_val == 3 .or. case_val == 4) then
+        if (case_val == 2) then
             if (abs(u_val) <= 1.0d0) then
                 llqr_kernel_weight = 0.75d0 * (1.0d0 - u_val * u_val)
             else

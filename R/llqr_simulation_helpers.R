@@ -10,28 +10,44 @@
 #' @param Mm.factor_vec Vector of Mm.factor values to test
 #' @return Named list of method functions
 #' @export
-compute_llqr_rule_bandwidth <- function(x, y, tau, h = NULL) {
-  x <- as.matrix(x)
-  y <- as.matrix(y)
-  m <- nrow(x)
-  nvar <- ncol(x)
+compute_llqr_rule_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor = 1) {
+  llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
+}
 
-  if (!is.null(h)) {
-    return(as.numeric(h))
+run_llqr_direct_local_fit <- function(x, y, tau, z = NULL, h, case = 1) {
+  x <- as.vector(x)
+  y <- as.vector(y)
+  if (is.null(z)) {
+    z <- x
+  }
+  z <- as.vector(z)
+
+  ll_est <- numeric(length(z))
+  d_ll_est <- numeric(length(z))
+  A <- cbind(1, x)
+  for (i in seq_along(z)) {
+    eva_z <- z[i] - x
+    w <- llqr_kernel_weights(eva_z / h, case = case)
+    active <- w > 0
+    if (sum(active) < 2L || qr(A[active, , drop = FALSE])$rank < 2L) {
+      stop("Singular design matrix in direct LLQR local fit.")
+    }
+    fit <- quantreg::rq.wfit(
+      x = A[active, , drop = FALSE],
+      y = y[active],
+      weights = w[active],
+      tau = tau
+    )
+    ll_est[i] <- fit$coef[1] + z[i] * fit$coef[2]
+    d_ll_est[i] <- fit$coef[2]
   }
 
-  red_dim <- floor(0.2 * m)
-  index_y <- order(y)[red_dim:(m - red_dim)]
-  h_val <- KernSmooth::dpill(x[index_y, , drop = FALSE], y[index_y])
-  h_val <- 1.25 * h_val * (tau * (1 - tau) / (dnorm(qnorm(tau)))^2)^0.2
-  if (is.nan(h_val)) {
-    h_val <- 1.25 * max(m^(-1 / (nvar + 4)), min(2, sd(y)) * m^(-1 / (nvar + 4)))
-  }
-
-  as.numeric(h_val)
+  list(ll_est = ll_est, d_ll_est = d_ll_est, h = h)
 }
 
 run_llqr_baseline_with_retry <- function(x, y, config) {
+  case <- llqr_validate_case(config$case)
+  h.factor <- if (is.null(config$h.factor)) 1 else config$h.factor
   retry_factors <- config$llqr_h_retry_factors
   if (is.null(retry_factors) || length(retry_factors) == 0) {
     retry_factors <- c(1, 1.25, 1.5, 2, 4, 8)
@@ -42,14 +58,21 @@ run_llqr_baseline_with_retry <- function(x, y, config) {
     stop("config$llqr_h_retry_factors must contain positive numeric values.")
   }
 
-  base_h <- compute_llqr_rule_bandwidth(x = x, y = y, tau = config$tau, h = config$h)
+  base_h <- compute_llqr_rule_bandwidth(
+    x = x,
+    y = y,
+    tau = config$tau,
+    h = config$h,
+    case = case,
+    h.factor = h.factor
+  )
   last_error <- NULL
 
   for (i in seq_along(retry_factors)) {
     h_used <- as.numeric(base_h * retry_factors[i])
     fit <- tryCatch(
-      quantdr::llqr(x = x, y = y, tau = config$tau, h = h_used,
-                    method = "rule", x0 = NULL),
+      run_llqr_direct_local_fit(x = x, y = y, tau = config$tau, z = config$z,
+                                h = h_used, case = case),
       error = function(e) e
     )
 
@@ -86,6 +109,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
     llqr_seq(x = x, y = y, tau = config$tau, z = config$z, 
              h = config$h, tol = config$tol, 
              maxit = config$maxit, bland = config$bland,
+             case = config$case, h.factor = config$h.factor,
              track_order = config$track_order)
   }
   
@@ -94,6 +118,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
                              tau = config$tau, h = config$h, 
                              tol = config$tol, maxit = config$maxit, 
                              bland = config$bland,
+                             case = config$case, h.factor = config$h.factor,
                              track_order = config$track_order)
   }
   
@@ -109,6 +134,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
         function(x, y, config) {
           llqr_ppro(x = x, y = y, tau = config$tau, z = config$z, 
                     case = config$case,
+                    h.factor = config$h.factor,
                     h = config$h, Mm.factor = Mm_factor_local, 
                     track_order = config$track_order)
         }
@@ -122,6 +148,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
       function(x, y, config) {
         llqr_seq_ppro(x = x, y = y, tau = config$tau, z = config$z, 
                       case = config$case,
+                      h.factor = config$h.factor,
                       h = config$h, tol = config$tol, 
                       maxit = config$maxit, bland = config$bland,
                       Mm.factor = Mm_factor_local, 
@@ -139,6 +166,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
                                         tau = config$tau, h = config$h,
                                         Mm.factor = Mm_factor_local,
                                         case = config$case,
+                                        h.factor = config$h.factor,
                                         tol = config$tol, maxit = config$maxit, 
                                         bland = config$bland,
                                         track_order = config$track_order)
@@ -158,6 +186,9 @@ create_llqr_methods <- function(Mm.factor_vec) {
 #' @return List containing estimates, H_seq, and timing results
 #' @export
 run_single_llqr_replication <- function(rep_id, config, methods) {
+  if (is.null(config$h.factor)) {
+    config$h.factor <- 1
+  }
   seed_used <- if (!is.null(config$seed_used)) {
     as.integer(config$seed_used)
   } else {
@@ -205,6 +236,7 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
 
     results$method_metadata[[method_name]] <- list(
       h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
+      h_factor = as.numeric(config$h.factor),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
       llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_
     )
@@ -224,12 +256,16 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
 #' @return List containing simulation results
 #' @export
 run_llqr_simulation <- function(config) {
+  if (is.null(config$h.factor)) {
+    config$h.factor <- 1
+  }
   cat("========================================\n")
   cat("Starting LLQR Simulation\n")
   cat("========================================\n")
   cat(sprintf("Case: %d\n", config$case))
   cat(sprintf("Tau: %.2f\n", config$tau))
   cat(sprintf("Sample size: %d\n", config$n))
+  cat(sprintf("h.factor: %s\n", as.character(config$h.factor)))
   cat(sprintf("Number of replications: %d\n", config$num_rep))
   cat(sprintf("Mm.factor values: %s\n", paste(config$Mm.factor, collapse = ", ")))
   cat("========================================\n\n")

@@ -8,12 +8,12 @@
 ! Compile with: gfortran -shared -fPIC -O3 -march=native -funroll-loops -ffast-math -o llqr_seq.so llqr_seq.f90
 
 subroutine llqr_seq_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
-                            bland_int, ll_est, d_ll_est, it_num, residual_est, H_mat)
+                            case_int, bland_int, ll_est, d_ll_est, it_num, residual_est, H_mat)
     
     implicit none
     
     ! Input arguments
-    integer, intent(in) :: m, nvar, rounds, maxit, bland_int
+    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int
     double precision, intent(in) :: x(m), y(m), z(rounds), tau, tol
     double precision, intent(inout) :: h
     
@@ -49,7 +49,7 @@ subroutine llqr_seq_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     double precision :: u(m), v(m), estimate(nvar+1)
     integer :: i, j, k, rd, iter, t_rr, tsep, t
     integer :: idx_r1_minus_offset
-    double precision :: rrl, min_k, pi
+    double precision :: rrl, min_k, pi, u_val
     logical :: bland
     
     ! Constants
@@ -120,7 +120,16 @@ subroutine llqr_seq_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         ! Compute kernel weights for current SORTED z
         do i = 1, m
             eva_z(i) = z_sorted(rd) - x(i)
-            w(i) = exp(-0.5d0 * (eva_z(i)/h)**2) / sqrt(2.0d0 * pi)
+            u_val = eva_z(i) / h
+            if (case_int == 2) then
+                if (abs(u_val) <= 1.0d0) then
+                    w(i) = 0.75d0 * (1.0d0 - u_val * u_val)
+                else
+                    w(i) = 0.0d0
+                end if
+            else
+                w(i) = exp(-0.5d0 * u_val**2) / sqrt(2.0d0 * pi)
+            end if
         end do
 
         ! ============================================================

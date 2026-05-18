@@ -109,6 +109,7 @@ if (is.null(rep_id_pool)) {
 }
 
 Mm.factor <- as_num_vec("FASTQR_MM_FACTOR", c(1e-2, 1e-3, 1e-4))
+h.factor  <- as_num("FASTQR_H_FACTOR", 1)
 tol       <- as_num("FASTQR_TOL", 1e-14)
 maxit     <- as_int("FASTQR_MAXIT", 2e6)
 bland     <- as_bool("FASTQR_BLAND", FALSE)
@@ -127,6 +128,9 @@ if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
 if (is.na(tol) || !is.finite(tol) || tol <= 0) {
   stop(sprintf("FASTQR_TOL must be > 0, got: %s", as.character(tol)))
 }
+if (is.na(h.factor) || !is.finite(h.factor) || h.factor <= 0) {
+  stop(sprintf("FASTQR_H_FACTOR must be > 0, got: %s", as.character(h.factor)))
+}
 require_pos_int(maxit, "FASTQR_MAXIT")
 
 config_base <- list(
@@ -135,6 +139,7 @@ config_base <- list(
   n = n,
   num_rep = num_rep,
   h = NULL,
+  h.factor = h.factor,
   z = NULL,
   tol = tol,
   maxit = maxit,
@@ -160,6 +165,7 @@ if (sparse_mode) {
 }
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
+cat("h.factor:", h.factor, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")
