@@ -48,15 +48,6 @@ run_llqr_direct_local_fit <- function(x, y, tau, z = NULL, h, case = 1) {
 run_llqr_baseline_with_retry <- function(x, y, config) {
   case <- llqr_validate_case(config$case)
   h.factor <- if (is.null(config$h.factor)) 1 else config$h.factor
-  retry_factors <- config$llqr_h_retry_factors
-  if (is.null(retry_factors) || length(retry_factors) == 0) {
-    retry_factors <- c(1, 1.25, 1.5, 2, 4, 8)
-  }
-  retry_factors <- as.numeric(retry_factors)
-  retry_factors <- retry_factors[is.finite(retry_factors) & retry_factors > 0]
-  if (length(retry_factors) == 0) {
-    stop("config$llqr_h_retry_factors must contain positive numeric values.")
-  }
 
   base_h <- compute_llqr_rule_bandwidth(
     x = x,
@@ -66,36 +57,20 @@ run_llqr_baseline_with_retry <- function(x, y, config) {
     case = case,
     h.factor = h.factor
   )
-  last_error <- NULL
-
-  for (i in seq_along(retry_factors)) {
-    h_used <- as.numeric(base_h * retry_factors[i])
-    fit <- tryCatch(
-      run_llqr_direct_local_fit(x = x, y = y, tau = config$tau, z = config$z,
-                                h = h_used, case = case),
-      error = function(e) e
-    )
-
-    if (!inherits(fit, "error")) {
-      fit$h <- h_used
-      fit$h_used <- h_used
-      fit$h_retry_factor <- retry_factors[i]
-      fit$llqr_attempts <- i
-      return(fit)
-    }
-
-    last_error <- fit
-    if (!grepl("Singular design matrix", conditionMessage(fit), fixed = TRUE)) {
-      stop(fit)
-    }
-  }
-
-  stop(last_error)
+  fit <- run_llqr_direct_local_fit(x = x, y = y, tau = config$tau, z = config$z,
+                                   h = base_h, case = case)
+  fit$h <- base_h
+  fit$h_used <- base_h
+  fit$h_retry_factor <- 1
+  fit$llqr_attempts <- 1L
+  fit
 }
 
 create_llqr_methods <- function(Mm.factor_vec) {
   methods <- list()
   include_ppro <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO", unset = "0")) %in%
+    c("1", "true", "t", "yes", "y")
+  include_seq_ppro_r <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_SEQ_PPRO_R", unset = "1")) %in%
     c("1", "true", "t", "yes", "y")
   include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO_FORTRAN", unset = "1")) %in%
     c("1", "true", "t", "yes", "y")
@@ -142,19 +117,21 @@ create_llqr_methods <- function(Mm.factor_vec) {
     }
     
     # llqr_seq_ppro with different Mm.factor values
-    method_name <- sprintf("llqr_seq_ppro_%d", i)
-    methods[[method_name]] <- local({
-      Mm_factor_local <- Mm_val
-      function(x, y, config) {
-        llqr_seq_ppro(x = x, y = y, tau = config$tau, z = config$z, 
-                      case = config$case,
-                      h.factor = config$h.factor,
-                      h = config$h, tol = config$tol, 
-                      maxit = config$maxit, bland = config$bland,
-                      Mm.factor = Mm_factor_local, 
-                      track_order = config$track_order)
-      }
-    })
+    if (include_seq_ppro_r) {
+      method_name <- sprintf("llqr_seq_ppro_%d", i)
+      methods[[method_name]] <- local({
+        Mm_factor_local <- Mm_val
+        function(x, y, config) {
+          llqr_seq_ppro(x = x, y = y, tau = config$tau, z = config$z,
+                        case = config$case,
+                        h.factor = config$h.factor,
+                        h = config$h, tol = config$tol,
+                        maxit = config$maxit, bland = config$bland,
+                        Mm.factor = Mm_factor_local,
+                        track_order = config$track_order)
+        }
+      })
+    }
     
     # llqr_seq_ppro_fortran is kept opt-in only until the Fortran path is stable.
     if (include_ppro_fortran) {
@@ -189,6 +166,12 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
   if (is.null(config$h.factor)) {
     config$h.factor <- 1
   }
+  first_or <- function(value, default) {
+    if (is.null(value) || length(value) == 0L) {
+      return(default)
+    }
+    value[[1L]]
+  }
   seed_used <- if (!is.null(config$seed_used)) {
     as.integer(config$seed_used)
   } else {
@@ -216,29 +199,38 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
   # Run each method
   for (method_name in names(methods)) {
     # Benchmark the method
-    timing_result <- microbenchmark::microbenchmark(
-      {
-        fit <- methods[[method_name]](x, y, config)
-      },
-      times = 1,
-      unit = "s"
+    timing_result <- tryCatch(
+      microbenchmark::microbenchmark(
+        {
+          fit <- methods[[method_name]](x, y, config)
+        },
+        times = 1,
+        unit = "s"
+      ),
+      error = function(e) {
+        prefix <- if (identical(method_name, "llqr")) "baseline_error:llqr" else sprintf("method_error:%s", method_name)
+        stop(sprintf("%s:%s", prefix, conditionMessage(e)), call. = FALSE)
+      }
     )
     
     # Store results - all methods return ll_est in the same format
     results$estimates[[method_name]] <- fit$ll_est
     
-    # Store H_seq if it exists in the fit object
-    if (!is.null(fit$H_seq)) {
-      results$H_seq[[method_name]] <- fit$H_seq
-    } else {
-      results$H_seq[[method_name]] <- NULL
-    }
+    # Use single-bracket assignment so NULL remains an explicit named slot.
+    results$H_seq[method_name] <- list(if (!is.null(fit$H_seq)) fit$H_seq else NULL)
 
     results$method_metadata[[method_name]] <- list(
       h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
       h_factor = as.numeric(config$h.factor),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
-      llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_
+      llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_,
+      returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
+      fallback_triggered = if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered),
+      cert_fail_detected = if (is.null(fit$cert_fail_detected)) NA else isTRUE(fit$cert_fail_detected),
+      fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),
+      failure_reason = as.character(first_or(fit$failure_reason, NA_character_)),
+      first_failed_eval = as.integer(first_or(fit$first_failed_eval, NA_integer_)),
+      backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_))
     )
     
     # Extract timing in seconds
@@ -314,7 +306,7 @@ run_llqr_simulation <- function(config) {
     for (method_name in method_names) {
       timing_matrix[rep, method_name] <- rep_results$timing[[method_name]]
       estimates_list[[method_name]][[rep]] <- rep_results$estimates[[method_name]]
-      H_seq_list[[method_name]][[rep]] <- rep_results$H_seq[[method_name]]
+      H_seq_list[[method_name]][rep] <- list(rep_results$H_seq[[method_name]])
     }
     
     # Update progress bar

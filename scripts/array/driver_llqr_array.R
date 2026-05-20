@@ -32,6 +32,21 @@ as_bool <- function(x, default = FALSE) {
   if (is.na(x) || nchar(x) == 0) return(default)
   tolower(x) %in% c("1","true","t","yes","y")
 }
+as_timeout_fork_mode <- function(x, default = "auto") {
+  x <- tolower(Sys.getenv(x, unset = default))
+  if (is.na(x) || nchar(x) == 0) return(default)
+  if (x %in% c("auto")) return("auto")
+  if (x %in% c("1", "true", "t", "yes", "y", "on")) return("on")
+  if (x %in% c("0", "false", "f", "no", "n", "off")) return("off")
+  stop(sprintf("FASTQR_USE_TIMEOUT_FORK must be auto/on/off or boolean-like, got: %s", x))
+}
+as_parallel_backend <- function(x, default = "FORK") {
+  x <- toupper(Sys.getenv(x, unset = default))
+  if (is.na(x) || nchar(x) == 0) return(default)
+  if (x %in% c("SEQ", "SEQUENTIAL", "NONE")) return("SEQ")
+  if (x %in% c("FORK", "PSOCK")) return(x)
+  stop(sprintf("FASTQR_PARALLEL_BACKEND must be FORK, PSOCK, or SEQ, got: %s", x))
+}
 as_num_vec <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
   if (is.na(x) || nchar(x) == 0) return(default)
@@ -118,6 +133,8 @@ seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 max_attempts_per_rep <- as_int("FASTQR_MAX_ATTEMPTS_PER_REP", 20)
 retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
 max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
+timeout_fork_mode <- as_timeout_fork_mode("FASTQR_USE_TIMEOUT_FORK", "auto")
+parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
@@ -132,6 +149,18 @@ if (is.na(h.factor) || !is.finite(h.factor) || h.factor <= 0) {
   stop(sprintf("FASTQR_H_FACTOR must be > 0, got: %s", as.character(h.factor)))
 }
 require_pos_int(maxit, "FASTQR_MAXIT")
+if (.Platform$OS.type != "unix" && parallel_backend == "FORK") {
+  parallel_backend <- "PSOCK"
+}
+
+parallel_chunk_enabled <- ncores > 1 && length(rep_ids) > 1 && parallel_backend != "SEQ"
+cluster_type <- if (parallel_chunk_enabled) parallel_backend else "none"
+timeout_fork_enabled <- switch(
+  timeout_fork_mode,
+  on = TRUE,
+  off = FALSE,
+  auto = !(parallel_chunk_enabled && cluster_type == "FORK")
+)
 
 config_base <- list(
   case = case,
@@ -157,6 +186,7 @@ dir.create(partial_dir, recursive = TRUE, showWarnings = FALSE)
 cat("=== LLQR ARRAY DRIVER ===\n")
 cat(sprintf("task_id=%d, ncores=%d, chunk_size=%d\n", task_id, ncores, chunk_size))
 cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
+cat(sprintf("project_dir=%s\n", PROJECT_DIR))
 if (sparse_mode) {
   cat(sprintf("sparse rep positions: %d-%d of %d (len=%d)\n", rep_start, rep_end, total_rep_targets, length(rep_ids)))
   cat(sprintf("rep ids: %s\n", paste(utils::head(rep_ids, 20L), collapse = ",")))
@@ -170,6 +200,10 @@ cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")
 cat("max_seconds_per_rep:", max_seconds_per_rep, "\n\n")
+cat("parallel_backend:", parallel_backend, "\n")
+cat("parallel_chunk_enabled:", parallel_chunk_enabled, "\n")
+cat("timeout_fork_mode:", timeout_fork_mode, "\n")
+cat("timeout_fork_enabled:", timeout_fork_enabled, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -179,8 +213,8 @@ if (length(rep_ids) == 0) {
 methods <- create_llqr_methods(config_base$Mm.factor)
 method_names <- names(methods)
 
-run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec) {
-  if (.Platform$OS.type != "unix") {
+run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec, use_timeout_fork) {
+  if (.Platform$OS.type != "unix" || !isTRUE(use_timeout_fork)) {
     setTimeLimit(elapsed = timeout_sec, transient = TRUE)
     on.exit(setTimeLimit(cpu = Inf, elapsed = Inf, transient = FALSE), add = TRUE)
     return(run_single_llqr_replication(rep_id, rep_config, methods))
@@ -213,7 +247,8 @@ run_one <- function(rep_id) {
     rep_config$seed_used <- seed_used
 
     out <- tryCatch({
-      rr <- run_rep_with_timeout(rep_id, rep_config, methods, max_seconds_per_rep)
+      rr <- run_rep_with_timeout(rep_id, rep_config, methods, max_seconds_per_rep,
+                                 timeout_fork_enabled)
 
       timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
                               dimnames = list(NULL, method_names))
@@ -244,6 +279,7 @@ run_one <- function(rep_id) {
         error_msg = NULL,
         seed_used = seed_used,
         attempts = attempt,
+        max_attempts_per_rep = max_attempts_per_rep,
         max_seconds_per_rep = max_seconds_per_rep,
         h_used = if (!is.null(llqr_meta$h_used)) llqr_meta$h_used else NA_real_,
         h_retry_factor = if (!is.null(llqr_meta$h_retry_factor)) llqr_meta$h_retry_factor else NA_real_,
@@ -252,21 +288,25 @@ run_one <- function(rep_id) {
 
       list(ok = TRUE, obj = partial_results)
     }, error = function(e) {
+      error_msg <- conditionMessage(e)
+      retryable_baseline_error <- grepl("^baseline_error:", error_msg)
       partial_results <- list(
         config = rep_config,
         method_names = method_names,
         timestamp = Sys.time(),
         simulation_type = "llqr_partial",
         status = "error",
-        error_msg = conditionMessage(e),
+        error_msg = error_msg,
         seed_used = seed_used,
         attempts = attempt,
-        max_seconds_per_rep = max_seconds_per_rep
+        max_attempts_per_rep = max_attempts_per_rep,
+        max_seconds_per_rep = max_seconds_per_rep,
+        retryable_baseline_error = retryable_baseline_error
       )
-      list(ok = FALSE, obj = partial_results)
+      list(ok = FALSE, obj = partial_results, retryable = retryable_baseline_error)
     })
 
-    if (isTRUE(out$ok)) break
+    if (isTRUE(out$ok) || !isTRUE(out$retryable)) break
   }
   
   save_path <- file.path(partial_dir, sprintf("rep%04d.RData", rep_id))
@@ -281,14 +321,13 @@ run_one <- function(rep_id) {
 }
 
 # Parallelize within the chunk if we have >1 core and >1 rep
-if (ncores > 1 && length(rep_ids) > 1) {
+if (parallel_chunk_enabled) {
   suppressPackageStartupMessages({
     library(doParallel)
     library(foreach)
   })
-  cluster_type <- if (.Platform$OS.type == "unix") "FORK" else "PSOCK"
   cat(sprintf("parallel cluster type: %s\n", cluster_type))
-  cl <- if (.Platform$OS.type == "unix") {
+  cl <- if (cluster_type == "FORK") {
     parallel::makeForkCluster(ncores)
   } else {
     parallel::makeCluster(ncores)
@@ -305,13 +344,24 @@ if (ncores > 1 && length(rep_ids) > 1) {
     NULL
   })
   
-  clusterExport(cl, varlist = c("rep_ids", "run_one"), envir = environment())
+  clusterExport(
+    cl,
+    varlist = c(
+      "rep_ids", "run_one", "run_rep_with_timeout", "config_base", "methods",
+      "method_names", "max_seconds_per_rep", "max_attempts_per_rep",
+      "retry_stride", "seed_base", "partial_dir", "timeout_fork_enabled"
+    ),
+    envir = environment()
+  )
   
   foreach(r = rep_ids) %dopar% {
     run_one(r)
     NULL
   }
 } else {
+  if (parallel_backend == "SEQ" && ncores > 1 && length(rep_ids) > 1) {
+    cat("parallel chunk execution disabled by FASTQR_PARALLEL_BACKEND=SEQ\n")
+  }
   for (r in rep_ids) run_one(r)
 }
 

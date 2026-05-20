@@ -87,12 +87,16 @@ num_rep  <- as_int("FASTQR_NUM_REP", 500)
 # chunk size: how many replications this array task should handle
 chunk_size <- as_int("FASTQR_CHUNK_SIZE", ncores)
 max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
+max_attempts_per_rep <- as_int("FASTQR_MAX_ATTEMPTS_PER_REP", 20)
+retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
 require_pos_int(task_id, "SLURM_ARRAY_TASK_ID")
 require_pos_int(ncores, "SLURM_CPUS_PER_TASK")
 require_pos_int(n, "FASTQR_N")
 require_pos_int(num_rep, "FASTQR_NUM_REP")
 require_pos_int(chunk_size, "FASTQR_CHUNK_SIZE")
 require_pos_int(max_seconds_per_rep, "FASTQR_MAX_SECONDS_PER_REP")
+require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
+require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
 if (!(case %in% c(1L, 2L))) {
   stop(sprintf("FASTQR_CASE must be 1 or 2, got: %s", as.character(case)))
 }
@@ -166,6 +170,8 @@ if (sparse_mode) {
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("seed_base:", seed_base, "\n\n")
+cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
+cat("retry_stride:", retry_stride, "\n\n")
 if (config_base$case == 2L) {
   cat("J:", config_base$J, "\n")
   cat("burn_in:", config_base$burn_in, "\n\n")
@@ -205,61 +211,75 @@ run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec) {
 }
 
 run_one <- function(rep_id) {
-  # The helper regenerates the same DGP from seed_base + rep_id, including Case 2 J/burn_in.
   rep_config <- config_base
   rep_config$num_rep <- 1
   rep_config$rep_id <- rep_id
-  seed_used <- as.integer(seed_base + rep_id)
-  
-  out <- tryCatch({
-    rr <- run_rep_with_timeout(rep_id, rep_config, methods, max_seconds_per_rep)
+
+  out <- NULL
+  for (attempt in seq_len(max_attempts_per_rep)) {
+    seed_used <- as.integer(seed_base + rep_id + (attempt - 1L) * retry_stride)
+    rep_config$seed_used <- seed_used
+
+    out <- tryCatch({
+      rr <- run_rep_with_timeout(rep_id, rep_config, methods, max_seconds_per_rep)
+
+      timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
+                              dimnames = list(NULL, method_names))
+      for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
+
+      estimates_list <- setNames(vector("list", length(method_names)), method_names)
+      H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
+      for (m in method_names) {
+        estimates_list[[m]] <- list(rr$estimates[[m]])
+        H_seq_list[[m]]     <- list(rr$H_seq[[m]])
+      }
+
+      partial_results <- list(
+        config = rep_config,
+        timing_matrix = timing_matrix,
+        estimates_list = estimates_list,
+        H_seq_list = H_seq_list,
+        method_names = method_names,
+        Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
+        timestamp = Sys.time(),
+        simulation_type = "tvcqr_partial",
+        status = "success",
+        error_msg = NULL,
+        seed_used = seed_used,
+        attempts = attempt,
+        max_attempts_per_rep = max_attempts_per_rep,
+        max_seconds_per_rep = max_seconds_per_rep
+      )
+
+      list(ok = TRUE, obj = partial_results)
+    }, error = function(e) {
+      error_msg <- conditionMessage(e)
+      retryable_baseline_error <- grepl("^baseline_error:", error_msg)
+      partial_results <- list(
+        config = rep_config,
+        method_names = method_names,
+        timestamp = Sys.time(),
+        simulation_type = "tvcqr_partial",
+        status = "error",
+        error_msg = error_msg,
+        seed_used = seed_used,
+        attempts = attempt,
+        max_attempts_per_rep = max_attempts_per_rep,
+        max_seconds_per_rep = max_seconds_per_rep,
+        retryable_baseline_error = retryable_baseline_error
+      )
+      list(ok = FALSE, obj = partial_results, retryable = retryable_baseline_error)
+    })
     
-    timing_matrix <- matrix(NA_real_, nrow = 1, ncol = length(method_names),
-                            dimnames = list(NULL, method_names))
-    for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
-    
-    estimates_list <- setNames(vector("list", length(method_names)), method_names)
-    H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
-    for (m in method_names) {
-      estimates_list[[m]] <- list(rr$estimates[[m]])
-      H_seq_list[[m]]     <- list(rr$H_seq[[m]])
-    }
-    
-    partial_results <- list(
-      config = rep_config,
-      timing_matrix = timing_matrix,
-      estimates_list = estimates_list,
-      H_seq_list = H_seq_list,
-      method_names = method_names,
-      Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
-      timestamp = Sys.time(),
-      simulation_type = "tvcqr_partial",
-      status = "success",
-      error_msg = NULL,
-      seed_used = seed_used,
-      max_seconds_per_rep = max_seconds_per_rep
-    )
-    
-    list(ok = TRUE, obj = partial_results)
-  }, error = function(e) {
-    partial_results <- list(
-      config = rep_config,
-      method_names = method_names,
-      timestamp = Sys.time(),
-      simulation_type = "tvcqr_partial",
-      status = "error",
-      error_msg = conditionMessage(e),
-      seed_used = seed_used,
-      max_seconds_per_rep = max_seconds_per_rep
-    )
-    list(ok = FALSE, obj = partial_results)
-  })
+    if (isTRUE(out$ok) || !isTRUE(out$retryable)) break
+  }
   
   save_path <- file.path(partial_dir, sprintf("rep%04d.RData", rep_id))
   partial_results <- out$obj
   save(partial_results, file = save_path)
-  cat(sprintf("[%s] rep=%d -> %s (%s)\n",
-              format(Sys.time(), "%F %T"), rep_id, save_path,
+  cat(sprintf("[%s] rep=%d attempt=%d seed=%d -> %s (%s)\n",
+              format(Sys.time(), "%F %T"), rep_id,
+              partial_results$attempts, partial_results$seed_used, save_path,
               partial_results$status))
   invisible(TRUE)
 }
@@ -290,7 +310,15 @@ if (ncores > 1 && length(rep_ids) > 1) {
     NULL
   })
   
-  clusterExport(cl, varlist = c("rep_ids", "run_one"), envir = environment())
+  clusterExport(
+    cl,
+    varlist = c(
+      "rep_ids", "run_one", "run_rep_with_timeout", "config_base", "methods",
+      "method_names", "max_seconds_per_rep", "max_attempts_per_rep",
+      "retry_stride", "seed_base", "partial_dir"
+    ),
+    envir = environment()
+  )
   
   foreach(r = rep_ids) %dopar% {
     run_one(r)

@@ -10,7 +10,7 @@ set -euo pipefail
 # Optional overrides:
 #   PROJECT_DIR=/path/to/fast_llqr
 #   RUN_LLQR=1 RUN_TVCQR=1
-#   LLQR_CASES="1 2 3 4"
+#   LLQR_CASES="1 2"
 #   TVCQR_CASES="1 2"
 #   TAUS="0.2 0.5 0.8"
 #   NS="200 500 1000 2000 5000"
@@ -27,7 +27,7 @@ PROJECT_DIR="${PROJECT_DIR:-/home/$USER/WORK/Erkang/fast_llqr}"
 RUN_LLQR="${RUN_LLQR:-1}"
 RUN_TVCQR="${RUN_TVCQR:-1}"
 
-LLQR_CASES="${LLQR_CASES:-1 2 3 4}"
+LLQR_CASES="${LLQR_CASES:-1 2}"
 TVCQR_CASES="${TVCQR_CASES:-1 2}"
 TAUS="${TAUS:-0.2 0.5 0.8}"
 NS="${NS:-200 500 1000 2000 5000}"

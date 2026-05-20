@@ -109,12 +109,17 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
 #' @export
 run_single_tvcqr_replication <- function(rep_id, config, methods) {
   config <- complete_tvcqr_sim_config(config)
+  seed_used <- if (!is.null(config$seed_used)) {
+    as.integer(config$seed_used)
+  } else {
+    as.integer(config$seed_base + rep_id)
+  }
   
   # Generate data
   data <- generate_ts(
     n = config$n,
     case = config$case,
-    seed = config$seed_base + rep_id,
+    seed = seed_used,
     J = config$J,
     burn_in = config$burn_in
   )
@@ -134,12 +139,18 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
   # Run each method
   for (method_name in names(methods)) {
     # Benchmark the method
-    timing_result <- microbenchmark::microbenchmark(
-      {
-        fit <- methods[[method_name]](x, y, config)
-      },
-      times = 1,
-      unit = "s"
+    timing_result <- tryCatch(
+      microbenchmark::microbenchmark(
+        {
+          fit <- methods[[method_name]](x, y, config)
+        },
+        times = 1,
+        unit = "s"
+      ),
+      error = function(e) {
+        prefix <- if (identical(method_name, "tvc_rq")) "baseline_error:tvc_rq" else sprintf("method_error:%s", method_name)
+        stop(sprintf("%s:%s", prefix, conditionMessage(e)), call. = FALSE)
+      }
     )
     
     # Store results
@@ -155,6 +166,8 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean
   }
+
+  results$seed_used <- seed_used
   
   return(results)
 }
