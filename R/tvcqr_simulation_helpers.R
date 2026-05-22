@@ -281,11 +281,15 @@ create_tvcqr_Mm_factor_mapping <- function(method_names, Mm.factor_vec) {
   
   for (i in seq_along(method_names)) {
     method <- method_names[i]
-    # Check if method name contains ppro and ends with a number
-    if (grepl("ppro_(\\d+)$", method)) {
-      # Extract the index from method name (the last number)
+    # Match both R and Fortran ppro variants, e.g.
+    # tvcqr_seq_ppro_1 and tvcqr_seq_ppro_fortran_1.
+    if (grepl("ppro.*_(\\d+)$", method)) {
       idx <- as.numeric(sub(".*_(\\d+)$", "\\1", method))
-      mapping$Mm.factor[i] <- as.character(Mm.factor_vec[idx])
+      if (!is.na(idx) && idx >= 1L && idx <= length(Mm.factor_vec)) {
+        mapping$Mm.factor[i] <- as.character(Mm.factor_vec[idx])
+      } else {
+        mapping$Mm.factor[i] <- "N/A"
+      }
     } else {
       mapping$Mm.factor[i] <- "N/A"
     }
