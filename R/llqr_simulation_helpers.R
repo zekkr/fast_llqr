@@ -70,6 +70,8 @@ create_llqr_methods <- function(Mm.factor_vec) {
   methods <- list()
   include_ppro <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO", unset = "0")) %in%
     c("1", "true", "t", "yes", "y")
+  include_seq_r <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_SEQ_R", unset = "1")) %in%
+    c("1", "true", "t", "yes", "y")
   include_seq_ppro_r <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_SEQ_PPRO_R", unset = "1")) %in%
     c("1", "true", "t", "yes", "y")
   include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_LLQR_PPRO_FORTRAN", unset = "1")) %in%
@@ -80,12 +82,14 @@ create_llqr_methods <- function(Mm.factor_vec) {
     run_llqr_baseline_with_retry(x = x, y = y, config = config)
   }
   
-  methods$llqr_seq <- function(x, y, config) {
-    llqr_seq(x = x, y = y, tau = config$tau, z = config$z, 
-             h = config$h, tol = config$tol, 
-             maxit = config$maxit, bland = config$bland,
-             case = config$case, h.factor = config$h.factor,
-             track_order = config$track_order)
+  if (include_seq_r) {
+    methods$llqr_seq <- function(x, y, config) {
+      llqr_seq(x = x, y = y, tau = config$tau, z = config$z,
+               h = config$h, tol = config$tol,
+               maxit = config$maxit, bland = config$bland,
+               case = config$case, h.factor = config$h.factor,
+               track_order = config$track_order)
+    }
   }
   
   methods$llqr_seq_fortran <- function(x, y, config) {

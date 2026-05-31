@@ -117,7 +117,7 @@ for (rep_id in 1:num_rep) {
   for (m in method_names) {
     estimates_list[[m]][[rep_id]] <- pr$estimates_list[[m]][[1]]
     if (include_h_seq) {
-      H_seq_list[[m]][[rep_id]] <- pr$H_seq_list[[m]][[1]]
+      H_seq_list[[m]][[rep_id]] <- if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL
     }
   }
 }

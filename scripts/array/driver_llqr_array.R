@@ -135,6 +135,7 @@ retry_stride <- as_int("FASTQR_RETRY_STRIDE", 1000000)
 max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
 timeout_fork_mode <- as_timeout_fork_mode("FASTQR_USE_TIMEOUT_FORK", "auto")
 parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
+save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
@@ -204,6 +205,7 @@ cat("parallel_backend:", parallel_backend, "\n")
 cat("parallel_chunk_enabled:", parallel_chunk_enabled, "\n")
 cat("timeout_fork_mode:", timeout_fork_mode, "\n")
 cat("timeout_fork_enabled:", timeout_fork_enabled, "\n\n")
+cat("save_h_seq:", save_h_seq, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -255,11 +257,13 @@ run_one <- function(rep_id) {
       for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
 
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
-      H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
+      H_seq_list     <- if (save_h_seq) setNames(vector("list", length(method_names)), method_names) else NULL
       method_metadata <- setNames(vector("list", length(method_names)), method_names)
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
-        H_seq_list[[m]]     <- list(rr$H_seq[[m]])
+        if (save_h_seq) {
+          H_seq_list[[m]] <- list(rr$H_seq[[m]])
+        }
         method_metadata[[m]] <- rr$method_metadata[[m]]
       }
 
@@ -269,7 +273,6 @@ run_one <- function(rep_id) {
         config = rep_config,
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
-        H_seq_list = H_seq_list,
         method_metadata = method_metadata,
         method_names = method_names,
         Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
@@ -281,10 +284,14 @@ run_one <- function(rep_id) {
         attempts = attempt,
         max_attempts_per_rep = max_attempts_per_rep,
         max_seconds_per_rep = max_seconds_per_rep,
+        save_h_seq = save_h_seq,
         h_used = if (!is.null(llqr_meta$h_used)) llqr_meta$h_used else NA_real_,
         h_retry_factor = if (!is.null(llqr_meta$h_retry_factor)) llqr_meta$h_retry_factor else NA_real_,
         llqr_attempts = if (!is.null(llqr_meta$llqr_attempts)) llqr_meta$llqr_attempts else NA_integer_
       )
+      if (save_h_seq) {
+        partial_results$H_seq_list <- H_seq_list
+      }
 
       list(ok = TRUE, obj = partial_results)
     }, error = function(e) {
@@ -301,6 +308,7 @@ run_one <- function(rep_id) {
         attempts = attempt,
         max_attempts_per_rep = max_attempts_per_rep,
         max_seconds_per_rep = max_seconds_per_rep,
+        save_h_seq = save_h_seq,
         retryable_baseline_error = retryable_baseline_error
       )
       list(ok = FALSE, obj = partial_results, retryable = retryable_baseline_error)

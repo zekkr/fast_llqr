@@ -341,6 +341,7 @@ summarize_one_result <- function(model, case, tau, n, num_rep, seed_base, path) 
       n_failed = n_failed,
       n_missing = n_missing,
       time_mean_sec = finite_or_na(timing_col, mean),
+      time_median_sec = finite_or_na(timing_col, median),
       time_min_sec = finite_or_na(timing_col, min),
       time_max_sec = finite_or_na(timing_col, max),
       max_average_relative_bias = max_bias,

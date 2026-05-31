@@ -34,16 +34,24 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
   methods <- list()
   include_ppro <- tolower(Sys.getenv("FASTQR_INCLUDE_TVCQR_PPRO", unset = "0")) %in%
     c("1", "true", "t", "yes", "y")
+  include_seq_r <- tolower(Sys.getenv("FASTQR_INCLUDE_TVCQR_SEQ_R", unset = "1")) %in%
+    c("1", "true", "t", "yes", "y")
+  include_seq_ppro_r <- tolower(Sys.getenv("FASTQR_INCLUDE_TVCQR_SEQ_PPRO_R", unset = "1")) %in%
+    c("1", "true", "t", "yes", "y")
+  include_ppro_fortran <- tolower(Sys.getenv("FASTQR_INCLUDE_TVCQR_PPRO_FORTRAN", unset = "1")) %in%
+    c("1", "true", "t", "yes", "y")
   
   # Methods without Mm.factor parameter
   methods$tvc_rq <- function(x, y, config) {
     tvc_rq(x = x, y = y, tau = config$tau, h = config$h)
   }
   
-  methods$tvcqr_seq <- function(x, y, config) {
-    tvcqr_seq(x = x, y = y, tau = config$tau, h = config$h, 
-              h.factor = config$h.factor, tol = config$tol, 
-              maxit = config$maxit, bland = config$bland)
+  if (include_seq_r) {
+    methods$tvcqr_seq <- function(x, y, config) {
+      tvcqr_seq(x = x, y = y, tau = config$tau, h = config$h,
+                h.factor = config$h.factor, tol = config$tol,
+                maxit = config$maxit, bland = config$bland)
+    }
   }
   
   methods$tvcqr_seq_fortran <- function(x, y, config) {
@@ -69,32 +77,36 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
     }
     
     # tvcqr_seq_ppro with different Mm.factor values
-    method_name <- sprintf("tvcqr_seq_ppro_%d", i)
-    methods[[method_name]] <- local({
-      Mm_factor_local <- Mm_val
-      function(x, y, config) {
-        tvcqr_seq_ppro(x = x, y = y, tau = config$tau, h = config$h, 
-                       h.factor = config$h.factor, tol = config$tol, 
-                       maxit = config$maxit, bland = config$bland,
-                       Mm.factor = Mm_factor_local, eps = config$eps,
-                       cpp_helper = config$cpp_helper)
-      }
-    })
+    if (include_seq_ppro_r) {
+      method_name <- sprintf("tvcqr_seq_ppro_%d", i)
+      methods[[method_name]] <- local({
+        Mm_factor_local <- Mm_val
+        function(x, y, config) {
+          tvcqr_seq_ppro(x = x, y = y, tau = config$tau, h = config$h,
+                         h.factor = config$h.factor, tol = config$tol,
+                         maxit = config$maxit, bland = config$bland,
+                         Mm.factor = Mm_factor_local, eps = config$eps,
+                         cpp_helper = config$cpp_helper)
+        }
+      })
+    }
     
     # tvcqr_seq_ppro_fortran with different Mm.factor values
-    method_name_fortran <- sprintf("tvcqr_seq_ppro_fortran_%d", i)
-    methods[[method_name_fortran]] <- local({
-      Mm_factor_local <- Mm_val
-      function(x, y, config) {
-        tvcqr_seq_ppro_fortran_wrapper(x = x, y = y, tau = config$tau, 
-                                       h = config$h, h.factor = config$h.factor,
-                                       tol = config$tol, maxit = config$maxit, 
-                                       bland = config$bland, 
-                                       Mm.factor = Mm_factor_local, 
-                                       eps = config$eps,
-                                       store_residual = FALSE)
-      }
-    })
+    if (include_ppro_fortran) {
+      method_name_fortran <- sprintf("tvcqr_seq_ppro_fortran_%d", i)
+      methods[[method_name_fortran]] <- local({
+        Mm_factor_local <- Mm_val
+        function(x, y, config) {
+          tvcqr_seq_ppro_fortran_wrapper(x = x, y = y, tau = config$tau,
+                                         h = config$h, h.factor = config$h.factor,
+                                         tol = config$tol, maxit = config$maxit,
+                                         bland = config$bland,
+                                         Mm.factor = Mm_factor_local,
+                                         eps = config$eps,
+                                         store_residual = FALSE)
+        }
+      })
+    }
   }
   
   return(methods)

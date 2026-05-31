@@ -130,6 +130,7 @@ cpp_helper<- as_bool("FASTQR_CPP_HELPER", FALSE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2025)
 J         <- as_int("FASTQR_J", 100)
 burn_in   <- as_int("FASTQR_BURN_IN", 500)
+save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 require_nonneg_int(J, "FASTQR_J")
 require_nonneg_int(burn_in, "FASTQR_BURN_IN")
 
@@ -177,6 +178,7 @@ if (config_base$case == 2L) {
   cat("burn_in:", config_base$burn_in, "\n\n")
 }
 cat("max_seconds_per_rep:", max_seconds_per_rep, "\n\n")
+cat("save_h_seq:", save_h_seq, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -228,17 +230,18 @@ run_one <- function(rep_id) {
       for (m in method_names) timing_matrix[1, m] <- as.numeric(rr$timing[[m]])
 
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
-      H_seq_list     <- setNames(vector("list", length(method_names)), method_names)
+      H_seq_list     <- if (save_h_seq) setNames(vector("list", length(method_names)), method_names) else NULL
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
-        H_seq_list[[m]]     <- list(rr$H_seq[[m]])
+        if (save_h_seq) {
+          H_seq_list[[m]] <- list(rr$H_seq[[m]])
+        }
       }
 
       partial_results <- list(
         config = rep_config,
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
-        H_seq_list = H_seq_list,
         method_names = method_names,
         Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
         timestamp = Sys.time(),
@@ -248,8 +251,12 @@ run_one <- function(rep_id) {
         seed_used = seed_used,
         attempts = attempt,
         max_attempts_per_rep = max_attempts_per_rep,
-        max_seconds_per_rep = max_seconds_per_rep
+        max_seconds_per_rep = max_seconds_per_rep,
+        save_h_seq = save_h_seq
       )
+      if (save_h_seq) {
+        partial_results$H_seq_list <- H_seq_list
+      }
 
       list(ok = TRUE, obj = partial_results)
     }, error = function(e) {
@@ -266,6 +273,7 @@ run_one <- function(rep_id) {
         attempts = attempt,
         max_attempts_per_rep = max_attempts_per_rep,
         max_seconds_per_rep = max_seconds_per_rep,
+        save_h_seq = save_h_seq,
         retryable_baseline_error = retryable_baseline_error
       )
       list(ok = FALSE, obj = partial_results, retryable = retryable_baseline_error)
