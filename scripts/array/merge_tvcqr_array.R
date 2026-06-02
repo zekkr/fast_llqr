@@ -92,8 +92,10 @@ timing_matrix <- matrix(NA_real_, nrow = num_rep, ncol = num_methods,
 
 estimates_list <- setNames(vector("list", num_methods), method_names)
 H_seq_list     <- if (include_h_seq) setNames(vector("list", num_methods), method_names) else NULL
+method_metadata <- setNames(vector("list", num_methods), method_names)
 for (m in method_names) {
   estimates_list[[m]] <- vector("list", num_rep)
+  method_metadata[[m]] <- vector("list", num_rep)
   if (include_h_seq) {
     H_seq_list[[m]] <- vector("list", num_rep)
   }
@@ -129,8 +131,9 @@ for (rep_id in 1:num_rep) {
   timing_matrix[rep_id, ] <- pr$timing_matrix[1, method_names]
   for (m in method_names) {
     estimates_list[[m]][[rep_id]] <- pr$estimates_list[[m]][[1]]
+    method_metadata[[m]][rep_id] <- list(if (!is.null(pr$method_metadata)) pr$method_metadata[[m]] else NULL)
     if (include_h_seq) {
-      H_seq_list[[m]][[rep_id]] <- if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL
+      H_seq_list[[m]][rep_id] <- list(if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL)
     }
   }
 }
@@ -139,6 +142,8 @@ results <- list(
   config = config,
   timing_matrix = timing_matrix,
   estimates_list = estimates_list,
+  method_metadata = method_metadata,
+  method_metadata_list = method_metadata,
   method_names = method_names,
   Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, Mm.factor),
   timestamp = Sys.time(),

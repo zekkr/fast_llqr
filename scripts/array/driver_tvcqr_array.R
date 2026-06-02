@@ -231,17 +231,20 @@ run_one <- function(rep_id) {
 
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
       H_seq_list     <- if (save_h_seq) setNames(vector("list", length(method_names)), method_names) else NULL
+      method_metadata <- setNames(vector("list", length(method_names)), method_names)
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
         if (save_h_seq) {
           H_seq_list[[m]] <- list(rr$H_seq[[m]])
         }
+        method_metadata[[m]] <- if (!is.null(rr$method_metadata)) rr$method_metadata[[m]] else NULL
       }
 
       partial_results <- list(
         config = rep_config,
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
+        method_metadata = method_metadata,
         method_names = method_names,
         Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
         timestamp = Sys.time(),
