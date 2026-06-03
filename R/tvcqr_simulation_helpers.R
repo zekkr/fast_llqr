@@ -11,6 +11,18 @@ complete_tvcqr_sim_config <- function(config) {
   config$seed_base <- if (is.null(config$seed_base)) 2025L else as.integer(config$seed_base)
   config$J <- if (is.null(config$J)) 100L else as.integer(config$J)
   config$burn_in <- if (is.null(config$burn_in)) 500L else as.integer(config$burn_in)
+  if (is.null(config$min_subsample_size)) {
+    config$min_subsample_size <- NULL
+  } else {
+    min_subsample_size_numeric <- as.numeric(config$min_subsample_size)
+    if (length(min_subsample_size_numeric) != 1L ||
+        is.na(min_subsample_size_numeric) ||
+        !is.finite(min_subsample_size_numeric) ||
+        min_subsample_size_numeric < 0) {
+      stop("config$min_subsample_size must be NULL or a non-negative finite scalar.")
+    }
+    config$min_subsample_size <- as.integer(ceiling(min_subsample_size_numeric))
+  }
   
   if (is.na(config$seed_base)) {
     stop("config$seed_base must be an integer.")
@@ -113,6 +125,9 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
           )
           if ("debug_trace" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
             call_args$debug_trace <- isTRUE(config$debug_trace)
+          }
+          if ("min_subsample_size" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$min_subsample_size <- config$min_subsample_size
           }
           do.call(tvcqr_seq_ppro_fortran_wrapper, call_args)
         }
@@ -249,6 +264,7 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
         NA_real_
       },
       h_factor = as.numeric(first_or(config$h.factor, NA_real_)),
+      min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
       returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
       fallback_triggered = if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered),
       fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),

@@ -30,6 +30,18 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+as_optional_nonneg_int <- function(x) {
+  raw <- trimws(Sys.getenv(x, unset = NA_character_))
+  if (is.na(raw) || nchar(raw) == 0 ||
+      tolower(raw) %in% c("null", "na", "default")) {
+    return(NULL)
+  }
+  value <- suppressWarnings(as.numeric(raw))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) || value < 0) {
+    stop(sprintf("%s must be empty/default or a non-negative finite scalar, got: %s", x, raw))
+  }
+  as.integer(ceiling(value))
+}
 
 case     <- as_int("FASTQR_CASE", 1)
 tau      <- as_num("FASTQR_TAU", 0.5)
@@ -48,6 +60,7 @@ J         <- as_int("FASTQR_J", 100)
 burn_in   <- as_int("FASTQR_BURN_IN", 500)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
+min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 
 config <- list(
   case = case,
@@ -64,7 +77,8 @@ config <- list(
   cpp_helper = cpp_helper,
   seed_base = seed_base,
   J = J,
-  burn_in = burn_in
+  burn_in = burn_in,
+  min_subsample_size = min_subsample_size
 )
 config <- complete_tvcqr_sim_config(config)
 
@@ -77,6 +91,7 @@ cat("=== TVCQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat(sprintf("case=%d (%s), tau=%.2f, n=%d, num_rep=%d\n",
             config$case, config$case_label, tau, n, num_rep))
+cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n")
 if (config$case == 2L) {
   cat(sprintf("J=%d, burn_in=%d\n", config$J, config$burn_in))
 }

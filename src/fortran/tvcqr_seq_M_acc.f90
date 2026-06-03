@@ -8,12 +8,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, store_residual_int, debug_int, &
                                    theta_ll_est, beta_full_est, it_num, residual_est, &
                                    M_out, n_sub, H_seq, same_h_refit_attempted, &
-                                   same_h_refit_recovered, ierr, failed_eval)
+                                   same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in)
     
     implicit none
     
     ! Input arguments
     integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int, debug_int
+    integer, intent(in) :: min_subsample_size_in
     double precision, intent(in) :: x(m, nvar), y(m), tau, tol, h_factor
     double precision, intent(in) :: Mm_factor, eps
     double precision, intent(inout) :: h
@@ -705,7 +706,11 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 
                 ! NEW: Ensure minimum subsample size
-                min_subsample_size = max(5 * (2 * (nvar + 1)), ceiling(0.2d0 * dble(m)))
+                if (min_subsample_size_in >= 0) then
+                    min_subsample_size = min_subsample_size_in
+                else
+                    min_subsample_size = max(5 * (2 * (nvar + 1)), ceiling(0.2d0 * dble(m)))
+                end if
 
                 ! Count potential observations in S
                 n_potential_S = 0

@@ -1616,7 +1616,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                                            tol = 1e-14, maxit = 1e6, bland = FALSE, 
                                            Mm.factor = 1e-4, eps = 1e-06,
                                            store_residual = FALSE, fallback = FALSE,
-                                           debug_trace = FALSE) {
+                                           debug_trace = FALSE,
+                                           min_subsample_size = NULL) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1645,6 +1646,19 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # Validate tau parameter (quantile level)
   if (tau <= 0 || tau >= 1) {
     stop("tau must be between 0 and 1 (exclusive). Current value: ", tau)
+  }
+
+  if (is.null(min_subsample_size)) {
+    min_subsample_size_in <- max(5L * (2L * (nvar + 1L)), ceiling(0.2 * m))
+  } else {
+    min_subsample_size_numeric <- as.numeric(min_subsample_size)
+    if (length(min_subsample_size_numeric) != 1L ||
+        is.na(min_subsample_size_numeric) ||
+        !is.finite(min_subsample_size_numeric) ||
+        min_subsample_size_numeric < 0) {
+      stop("min_subsample_size must be a non-negative finite scalar or NULL.")
+    }
+    min_subsample_size_in <- as.integer(ceiling(min_subsample_size_numeric))
   }
   
   # Handle bandwidth parameter
@@ -1708,6 +1722,7 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      same_h_refit_recovered = as.integer(same_h_refit_recovered),
                      ierr = as.integer(0),
                      failed_eval = as.integer(0),
+                     min_subsample_size_in = as.integer(min_subsample_size_in),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 
