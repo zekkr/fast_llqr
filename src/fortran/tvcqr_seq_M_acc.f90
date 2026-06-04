@@ -88,7 +88,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision :: rrl, min_k, temp_sum
     logical :: bland, store_residual, debug_requested
     double precision :: b_k_original
-    logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok
+    logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok, refit_used
     integer :: bad_signs, n_sl, n_sh, n_sure_signs
     integer :: idpos(m), idneg(m), n_idpos, n_idneg
     integer :: H_indices(2*(nvar+1)), Hbar_indices(m+2)
@@ -2375,20 +2375,47 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 estimate(i) = bs(i)
             end do
 
- 
-
-            ! Check signs of residuals using FULL sample
-            do i = 1, m
-                r(i) = y(i)
-                do j = 1, 2*(nvar+1)
-                    r(i) = r(i) - A(i, j) * estimate(j)
-                end do
+            ! Extract the final H from the converged reduced simplex basis.
+            do i = 1, 2*(nvar+1)
+                j = r1(i) - 2 - 2*nvar
+                if (j > 0 .and. j <= ms_org) then
+                    H_indices(i) = idx_not_jl_or_jh(j)
+                else
+                    H_indices(i) = 0
+                end if
             end do
 
+            refit_used = .false.
+            if (tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
+                same_h_refit_attempted(eva_t) = 1
+                call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
+                                        estimate_refit, r_refit, same_h_ok)
+                if (same_h_ok) then
+                    do i = 1, 2*(nvar+1)
+                        estimate(i) = estimate_refit(i)
+                    end do
+                    do i = 1, m
+                        r(i) = r_refit(i)
+                    end do
+                    refit_used = .true.
+                end if
+            end if
+
+            ! Check signs of residuals using FULL sample. If same-H refit
+            ! failed or was not attempted, fall back to the tableau estimate.
+            if (.not. refit_used) then
+                do i = 1, m
+                    r(i) = y(i)
+                    do j = 1, 2*(nvar+1)
+                        r(i) = r(i) - A(i, j) * estimate(j)
+                    end do
+                end do
+            end if
 
 
 
-            ! Count bad signs using the raw full residual from a converged tableau.
+
+            ! Count bad signs using the full residual from the current candidate.
             bad_signs = 0
             n_sure_signs = n_sl + n_sh  ! Total sure-sign observations
 
@@ -2432,32 +2459,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             else
                 ! No bad signs - we've reached optimality
-                do i = 1, 2*(nvar+1)
-                    j = r1(i) - 2 - 2*nvar
-                    if (j > 0 .and. j <= ms_org) then
-                        H_indices(i) = idx_not_jl_or_jh(j)
-                    else
-                        H_indices(i) = 0
-                    end if
-                end do
                 accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, 2*(nvar+1), res_tol)
-                if (.not. accept_subsample) then
-                    if (tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
-                        same_h_refit_attempted(eva_t) = 1
-                        call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
-                                                estimate_refit, r_refit, same_h_ok)
-                        if (same_h_ok) then
-                            do i = 1, 2*(nvar+1)
-                                estimate(i) = estimate_refit(i)
-                            end do
-                            do i = 1, m
-                                r(i) = r_refit(i)
-                            end do
-                            accept_subsample = .true.
-                            same_h_refit_recovered(eva_t) = 1
-                        end if
-                    end if
-                end if
                 if (.not. accept_subsample) then
                     if ((.not. any(sl)) .and. (.not. any(sh)) .and. (ms >= m)) then
                         call set_failure(1, eva_t)
@@ -2468,6 +2470,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     cycle
                 end if
                 not_optimal = .false.
+                if (refit_used) then
+                    same_h_refit_recovered(eva_t) = 1
+                end if
+                do i = 1, 2*(nvar+1)
+                    bs(i) = estimate(i)
+                end do
                 do i = 1, 2*(nvar+1)
                     r(H_indices(i)) = 0.0d0
                 end do
@@ -2552,20 +2560,36 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
                                 id_gammaxs_Hbar(i) = IBs(idx) - 2*(nvar+1) - ms
+                                if (id_gammaxs_Hbar(i) < 1 .or. id_gammaxs_Hbar(i) > ms_org) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 idx_Hbar_neg(n_Hbar_neg) = idx_not_jl_or_jh(id_gammaxs_Hbar(i))
+                                if (idx_Hbar_neg(n_Hbar_neg) < 1 .or. idx_Hbar_neg(n_Hbar_neg) > m) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 do j = 1, 2*(nvar+1)
                                     gammaxs_neg(n_Hbar_neg, j) = gammaxs(idx, j)
                                 end do
-                                bs_neg(n_Hbar_neg) = bs(idx)
+                                bs_neg(n_Hbar_neg) = max(-r(idx_Hbar_neg(n_Hbar_neg)), 0.0d0)
                             else
                                 ! This is a u variable
                                 n_Hbar_pos = n_Hbar_pos + 1
                                 id_gammaxs_Hbar(i) = IBs(idx) - 2*(nvar+1)
+                                if (id_gammaxs_Hbar(i) < 1 .or. id_gammaxs_Hbar(i) > ms_org) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 idx_Hbar_pos(n_Hbar_pos) = idx_not_jl_or_jh(id_gammaxs_Hbar(i))
+                                if (idx_Hbar_pos(n_Hbar_pos) < 1 .or. idx_Hbar_pos(n_Hbar_pos) > m) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 do j = 1, 2*(nvar+1)
                                     gammaxs_pos(n_Hbar_pos, j) = gammaxs(idx, j)
                                 end do
-                                bs_pos(n_Hbar_pos) = bs(idx)
+                                bs_pos(n_Hbar_pos) = max(r(idx_Hbar_pos(n_Hbar_pos)), 0.0d0)
                             end if
                         end do
 
