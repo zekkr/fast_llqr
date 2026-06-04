@@ -22,6 +22,7 @@ set -euo pipefail
 #   WALLTIME_TVCQR=08:00:00
 #   FASTQR_MM_FACTOR_LLQR="1e-2,1e-3,1e-4"
 #   FASTQR_MM_FACTOR_TVCQR="1e-3,1e-4"
+#   FASTQR_MIN_SUBSAMPLE_SIZE=1
 #   FASTQR_SAVE_H_SEQ=0
 #   FASTQR_MERGE_INCLUDE_H_SEQ=0
 
@@ -48,6 +49,7 @@ FASTQR_MM_FACTOR_TVCQR="${FASTQR_MM_FACTOR_TVCQR:-1e-3,1e-4}"
 FASTQR_MERGE_DEPENDENCY_TYPE="${FASTQR_MERGE_DEPENDENCY_TYPE:-afterany}"
 FASTQR_SAVE_H_SEQ="${FASTQR_SAVE_H_SEQ:-1}"
 FASTQR_MERGE_INCLUDE_H_SEQ="${FASTQR_MERGE_INCLUDE_H_SEQ:-0}"
+FASTQR_MIN_SUBSAMPLE_SIZE="${FASTQR_MIN_SUBSAMPLE_SIZE:-}"
 
 FASTQR_INCLUDE_LLQR_PPRO="${FASTQR_INCLUDE_LLQR_PPRO:-0}"
 FASTQR_INCLUDE_LLQR_SEQ_R="${FASTQR_INCLUDE_LLQR_SEQ_R:-1}"
@@ -76,6 +78,7 @@ submit_one() {
   export FASTQR_MERGE_DEPENDENCY_TYPE
   export FASTQR_SAVE_H_SEQ
   export FASTQR_MERGE_INCLUDE_H_SEQ
+  export FASTQR_MIN_SUBSAMPLE_SIZE
   export FASTQR_INCLUDE_LLQR_PPRO
   export FASTQR_INCLUDE_LLQR_SEQ_R
   export FASTQR_INCLUDE_LLQR_SEQ_PPRO_R
@@ -88,12 +91,12 @@ submit_one() {
   if [[ "$model" == "llqr" ]]; then
     export FASTQR_MM_FACTOR="$FASTQR_MM_FACTOR_LLQR"
     export WALLTIME="$WALLTIME_LLQR"
-    echo "[LLQR] case=${case_id} tau=${tau} n=${n} rep=${FASTQR_NUM_REP}"
+    echo "[LLQR] case=${case_id} tau=${tau} n=${n} rep=${FASTQR_NUM_REP} min_subsample_size=${FASTQR_MIN_SUBSAMPLE_SIZE:-default}"
     bash "${PROJECT_DIR}/scripts/slurm/submit_llqr_array.sh"
   elif [[ "$model" == "tvcqr" ]]; then
     export FASTQR_MM_FACTOR="$FASTQR_MM_FACTOR_TVCQR"
     export WALLTIME="$WALLTIME_TVCQR"
-    echo "[TVCQR] case=${case_id} tau=${tau} n=${n} rep=${FASTQR_NUM_REP}"
+    echo "[TVCQR] case=${case_id} tau=${tau} n=${n} rep=${FASTQR_NUM_REP} min_subsample_size=${FASTQR_MIN_SUBSAMPLE_SIZE:-default}"
     bash "${PROJECT_DIR}/scripts/slurm/submit_tvcqr_array.sh"
   else
     echo "Unknown model: ${model}" >&2
@@ -116,6 +119,7 @@ echo "ACCOUNT=${ACCOUNT}"
 echo "RUN_LLQR=${RUN_LLQR} RUN_TVCQR=${RUN_TVCQR}"
 echo "FASTQR_SAVE_H_SEQ=${FASTQR_SAVE_H_SEQ}"
 echo "FASTQR_MERGE_INCLUDE_H_SEQ=${FASTQR_MERGE_INCLUDE_H_SEQ}"
+echo "FASTQR_MIN_SUBSAMPLE_SIZE=${FASTQR_MIN_SUBSAMPLE_SIZE:-default}"
 echo "FASTQR_INCLUDE_LLQR_PPRO=${FASTQR_INCLUDE_LLQR_PPRO}"
 echo "FASTQR_INCLUDE_LLQR_SEQ_R=${FASTQR_INCLUDE_LLQR_SEQ_R}"
 echo "FASTQR_INCLUDE_LLQR_SEQ_PPRO_R=${FASTQR_INCLUDE_LLQR_SEQ_PPRO_R}"

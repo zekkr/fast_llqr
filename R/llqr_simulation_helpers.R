@@ -14,6 +14,26 @@ compute_llqr_rule_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor 
   llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
 }
 
+complete_llqr_sim_config <- function(config) {
+  if (is.null(config$h.factor)) {
+    config$h.factor <- 1
+  }
+  if (is.null(config$min_subsample_size)) {
+    config$min_subsample_size <- NULL
+  } else {
+    min_subsample_size_numeric <- as.numeric(config$min_subsample_size)
+    if (length(min_subsample_size_numeric) != 1L ||
+        is.na(min_subsample_size_numeric) ||
+        !is.finite(min_subsample_size_numeric) ||
+        min_subsample_size_numeric < 1L ||
+        min_subsample_size_numeric != floor(min_subsample_size_numeric)) {
+      stop("config$min_subsample_size must be NULL or a positive integer.")
+    }
+    config$min_subsample_size <- as.integer(min_subsample_size_numeric)
+  }
+  config
+}
+
 run_llqr_direct_local_fit <- function(x, y, tau, z = NULL, h, case = 1) {
   x <- as.vector(x)
   y <- as.vector(y)
@@ -150,6 +170,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
                                         h.factor = config$h.factor,
                                         tol = config$tol, maxit = config$maxit, 
                                         bland = config$bland,
+                                        min_subsample_size = config$min_subsample_size,
                                         track_order = config$track_order)
         }
       })
@@ -167,9 +188,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
 #' @return List containing estimates, H_seq, and timing results
 #' @export
 run_single_llqr_replication <- function(rep_id, config, methods) {
-  if (is.null(config$h.factor)) {
-    config$h.factor <- 1
-  }
+  config <- complete_llqr_sim_config(config)
   first_or <- function(value, default) {
     if (is.null(value) || length(value) == 0L) {
       return(default)
@@ -226,6 +245,7 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     results$method_metadata[[method_name]] <- list(
       h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
       h_factor = as.numeric(config$h.factor),
+      min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
       llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_,
       returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
@@ -252,9 +272,7 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
 #' @return List containing simulation results
 #' @export
 run_llqr_simulation <- function(config) {
-  if (is.null(config$h.factor)) {
-    config$h.factor <- 1
-  }
+  config <- complete_llqr_sim_config(config)
   cat("========================================\n")
   cat("Starting LLQR Simulation\n")
   cat("========================================\n")
@@ -297,6 +315,12 @@ run_llqr_simulation <- function(config) {
   for (i in seq_along(method_names)) {
     H_seq_list[[i]] <- vector("list", config$num_rep)
   }
+
+  method_metadata_list <- vector("list", num_methods)
+  names(method_metadata_list) <- method_names
+  for (i in seq_along(method_names)) {
+    method_metadata_list[[i]] <- vector("list", config$num_rep)
+  }
   
   # Run replications with progress tracking
   cat("Running replications...\n")
@@ -311,6 +335,7 @@ run_llqr_simulation <- function(config) {
       timing_matrix[rep, method_name] <- rep_results$timing[[method_name]]
       estimates_list[[method_name]][[rep]] <- rep_results$estimates[[method_name]]
       H_seq_list[[method_name]][rep] <- list(rep_results$H_seq[[method_name]])
+      method_metadata_list[[method_name]][[rep]] <- rep_results$method_metadata[[method_name]]
     }
     
     # Update progress bar
@@ -326,6 +351,8 @@ run_llqr_simulation <- function(config) {
     timing_matrix = timing_matrix,
     estimates_list = estimates_list,
     H_seq_list = H_seq_list,
+    method_metadata = method_metadata_list,
+    method_metadata_list = method_metadata_list,
     method_names = method_names,
     Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config$Mm.factor),
     timestamp = Sys.time(),
