@@ -14,10 +14,33 @@ compute_llqr_rule_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor 
   llqr_default_bandwidth(x = x, y = y, tau = tau, h = h, case = case, h.factor = h.factor)
 }
 
+llqr_sim_bool <- function(value, default, name) {
+  if (is.null(value)) {
+    return(default)
+  }
+  if (is.logical(value) && length(value) == 1L && !is.na(value)) {
+    return(value)
+  }
+  if (is.numeric(value) && length(value) == 1L && is.finite(value) && value %in% c(0, 1)) {
+    return(as.logical(value))
+  }
+  if (is.character(value) && length(value) == 1L) {
+    normalized <- tolower(trimws(value))
+    if (normalized %in% c("1", "true", "t", "yes", "y", "on")) return(TRUE)
+    if (normalized %in% c("0", "false", "f", "no", "n", "off")) return(FALSE)
+  }
+  stop(sprintf("config$%s must be a boolean scalar.", name))
+}
+
 complete_llqr_sim_config <- function(config) {
   if (is.null(config$h.factor)) {
     config$h.factor <- 1
   }
+  config$always_same_h_refit <- llqr_sim_bool(
+    config$always_same_h_refit,
+    default = TRUE,
+    name = "always_same_h_refit"
+  )
   if (is.null(config$min_subsample_size)) {
     config$min_subsample_size <- NULL
   } else {
@@ -171,6 +194,7 @@ create_llqr_methods <- function(Mm.factor_vec) {
                                         tol = config$tol, maxit = config$maxit, 
                                         bland = config$bland,
                                         min_subsample_size = config$min_subsample_size,
+                                        always_same_h_refit = config$always_same_h_refit,
                                         track_order = config$track_order)
         }
       })
@@ -246,6 +270,7 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
       h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
       h_factor = as.numeric(config$h.factor),
       min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
+      always_same_h_refit = isTRUE(config$always_same_h_refit),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
       llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_,
       returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),

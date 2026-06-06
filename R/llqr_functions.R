@@ -1768,7 +1768,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                                       debug_trace = FALSE,
                                       debug_rounds = NULL,
                                       min_subsample_size = NULL,
-                                      store_residual = FALSE) {
+                                      store_residual = FALSE,
+                                      always_same_h_refit = TRUE) {
   ensure_llqr_fortran_library_loaded("llqr_ppro.so")
   case <- llqr_validate_case(case)
   h.factor <- llqr_validate_h_factor(h.factor)
@@ -1880,7 +1881,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1),
                      n_sub_out = integer(rounds),
                      ierr = integer(1),
-                     failed_eval = integer(1))
+                     failed_eval = integer(1),
+                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)))
 
   raw_backend <- list(
     ll_est = as.numeric(result$ll_est),

@@ -2,6 +2,24 @@
 # TVCQR Simulation Helper Functions
 # ============================================================================ #
 
+tvcqr_sim_bool <- function(value, default, name) {
+  if (is.null(value)) {
+    return(default)
+  }
+  if (is.logical(value) && length(value) == 1L && !is.na(value)) {
+    return(value)
+  }
+  if (is.numeric(value) && length(value) == 1L && is.finite(value) && value %in% c(0, 1)) {
+    return(as.logical(value))
+  }
+  if (is.character(value) && length(value) == 1L) {
+    normalized <- tolower(trimws(value))
+    if (normalized %in% c("1", "true", "t", "yes", "y", "on")) return(TRUE)
+    if (normalized %in% c("0", "false", "f", "no", "n", "off")) return(FALSE)
+  }
+  stop(sprintf("config$%s must be a boolean scalar.", name))
+}
+
 complete_tvcqr_sim_config <- function(config) {
   case_info <- resolve_tvcqr_case(config$case)
   config$case <- case_info$case_id
@@ -11,6 +29,11 @@ complete_tvcqr_sim_config <- function(config) {
   config$seed_base <- if (is.null(config$seed_base)) 2025L else as.integer(config$seed_base)
   config$J <- if (is.null(config$J)) 100L else as.integer(config$J)
   config$burn_in <- if (is.null(config$burn_in)) 500L else as.integer(config$burn_in)
+  config$always_same_h_refit <- tvcqr_sim_bool(
+    config$always_same_h_refit,
+    default = TRUE,
+    name = "always_same_h_refit"
+  )
   if (is.null(config$min_subsample_size)) {
     config$min_subsample_size <- NULL
   } else {
@@ -128,6 +151,9 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
           }
           if ("min_subsample_size" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
             call_args$min_subsample_size <- config$min_subsample_size
+          }
+          if ("always_same_h_refit" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$always_same_h_refit <- config$always_same_h_refit
           }
           do.call(tvcqr_seq_ppro_fortran_wrapper, call_args)
         }
@@ -265,6 +291,7 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
       },
       h_factor = as.numeric(first_or(config$h.factor, NA_real_)),
       min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
+      always_same_h_refit = isTRUE(config$always_same_h_refit),
       returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
       fallback_triggered = if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered),
       fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),

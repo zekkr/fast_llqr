@@ -144,6 +144,7 @@ J         <- as_int("FASTQR_J", 100)
 burn_in   <- as_int("FASTQR_BURN_IN", 500)
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 require_nonneg_int(J, "FASTQR_J")
 require_nonneg_int(burn_in, "FASTQR_BURN_IN")
 
@@ -163,7 +164,8 @@ config_base <- list(
   seed_base = seed_base,
   J = J,
   burn_in = burn_in,
-  min_subsample_size = min_subsample_size
+  min_subsample_size = min_subsample_size,
+  always_same_h_refit = always_same_h_refit
 )
 config_base <- complete_tvcqr_sim_config(config_base)
 
@@ -185,6 +187,7 @@ if (sparse_mode) {
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
+cat("always_same_h_refit:", always_same_h_refit, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")

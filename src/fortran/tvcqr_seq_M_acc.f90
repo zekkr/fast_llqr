@@ -8,13 +8,14 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, store_residual_int, debug_int, &
                                    theta_ll_est, beta_full_est, it_num, residual_est, &
                                    M_out, n_sub, H_seq, same_h_refit_attempted, &
-                                   same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in)
+                                   same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in, &
+                                   always_same_h_refit_int)
     
     implicit none
     
     ! Input arguments
     integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int, debug_int
-    integer, intent(in) :: min_subsample_size_in
+    integer, intent(in) :: min_subsample_size_in, always_same_h_refit_int
     double precision, intent(in) :: x(m, nvar), y(m), tau, tol, h_factor
     double precision, intent(in) :: Mm_factor, eps
     double precision, intent(inout) :: h
@@ -86,7 +87,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer :: i, j, k, t, eva_t, iter
     integer :: t_rr, tsep
     double precision :: rrl, min_k, temp_sum
-    logical :: bland, store_residual, debug_requested
+    logical :: bland, store_residual, debug_requested, always_same_h_refit
     double precision :: b_k_original
     logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok, refit_used
     integer :: bad_signs, n_sl, n_sh, n_sure_signs
@@ -149,6 +150,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     bland = (bland_int /= 0)
     store_residual = (store_residual_int /= 0)
     debug_requested = (debug_int /= 0)
+    always_same_h_refit = (always_same_h_refit_int /= 0)
     pivot_tol = max(10.0d0 * tol, 1.0d-12)
     max_empty_pivot_retries = 3
     res_tol = 1.0d-6
@@ -2386,7 +2388,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             end do
 
             refit_used = .false.
-            if (tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
+            if (always_same_h_refit .and. tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
                 same_h_refit_attempted(eva_t) = 1
                 call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
                                         estimate_refit, r_refit, same_h_ok)
@@ -2433,33 +2435,44 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Handle bad signs
             if (bad_signs > 0) then
-
-                if (bad_signs > int(0.1d0 * dble(ms))) then
-                    mmm_thresh = 2.0d0 * mmm_thresh
-                    not_new_sl_sh = .true.
-                else
-                    ! Fix bad signs ONLY when bad_signs <= 0.1*ms
-                    do i = 1, m
-                        if ((r(i) < 0.0d0) .and. sh(i)) then
-                            sh(i) = .false.
-                        end if
-                        if ((r(i) > 0.0d0) .and. sl(i)) then
-                            sl(i) = .false.
-                        end if
-                    end do
-                    not_new_sl_sh = .false.
-
-
-
-
-
-
-
-                end if
+                call handle_current_bad_signs()
 
             else
                 ! No bad signs - we've reached optimality
                 accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, 2*(nvar+1), res_tol)
+                if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
+                    if (tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
+                        same_h_refit_attempted(eva_t) = 1
+                        call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
+                                                estimate_refit, r_refit, same_h_ok)
+                        if (same_h_ok) then
+                            do i = 1, 2*(nvar+1)
+                                estimate(i) = estimate_refit(i)
+                            end do
+                            do i = 1, m
+                                r(i) = r_refit(i)
+                            end do
+                            refit_used = .true.
+                            bad_signs = 0
+                            do i = 1, m
+                                if ((r(i) < 0.0d0) .and. sh(i)) then
+                                    bad_signs = bad_signs + 1
+                                end if
+                                if ((r(i) > 0.0d0) .and. sl(i)) then
+                                    bad_signs = bad_signs + 1
+                                end if
+                            end do
+                            if (bad_signs == 0) then
+                                accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, &
+                                                                           2*(nvar+1), res_tol)
+                            end if
+                        end if
+                    end if
+                end if
+                if (bad_signs > 0) then
+                    call handle_current_bad_signs()
+                    cycle
+                end if
                 if (.not. accept_subsample) then
                     if ((.not. any(sl)) .and. (.not. any(sh)) .and. (ms >= m)) then
                         call set_failure(1, eva_t)
@@ -2653,6 +2666,26 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     deallocate(bs)
 
 contains
+
+    subroutine handle_current_bad_signs()
+        implicit none
+        integer :: bi
+
+        if (bad_signs > int(0.1d0 * dble(ms))) then
+            mmm_thresh = 2.0d0 * mmm_thresh
+            not_new_sl_sh = .true.
+        else
+            do bi = 1, m
+                if ((r(bi) < 0.0d0) .and. sh(bi)) then
+                    sh(bi) = .false.
+                end if
+                if ((r(bi) > 0.0d0) .and. sl(bi)) then
+                    sl(bi) = .false.
+                end if
+            end do
+            not_new_sl_sh = .false.
+        end if
+    end subroutine handle_current_bad_signs
 
     subroutine set_failure(code, eval_idx)
         implicit none

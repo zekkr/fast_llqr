@@ -150,6 +150,7 @@ timeout_fork_mode <- as_timeout_fork_mode("FASTQR_USE_TIMEOUT_FORK", "auto")
 parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
@@ -191,7 +192,8 @@ config_base <- list(
   track_order = track_order,
   Mm.factor = Mm.factor,
   seed_base = seed_base,
-  min_subsample_size = min_subsample_size
+  min_subsample_size = min_subsample_size,
+  always_same_h_refit = always_same_h_refit
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
@@ -213,6 +215,7 @@ cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("h.factor:", h.factor, "\n")
 cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
+cat("always_same_h_refit:", always_same_h_refit, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")

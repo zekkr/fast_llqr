@@ -122,12 +122,13 @@ end function max_array
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                              Mm_factor, case_int, bland_int, min_subsample_size_in, &
                              ll_est, d_ll_est, it_num, residual_est, H_mat, n_sub_out, &
-                             ierr, failed_eval)
+                             ierr, failed_eval, always_same_h_refit_int)
 
     implicit none
 
     ! Input arguments
-    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int, min_subsample_size_in
+    integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int
+    integer, intent(in) :: min_subsample_size_in, always_same_h_refit_int
     double precision, intent(in) :: x(m), y(m), z(rounds), tau, tol, Mm_factor
     double precision, intent(inout) :: h
 
@@ -159,7 +160,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: iter_total, iter_attempt, remaining
     integer :: idx_r1_minus_offset
     double precision :: rrl, min_k, pi, pivot_row_value
-    logical :: bland
+    logical :: bland, always_same_h_refit
 
     ! PPRO-specific variables
     double precision :: mm, mmm, M_threshold, residual_scale
@@ -252,6 +253,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     ! Constants
     pi = 4.0d0 * atan(1.0d0)
     bland = (bland_int /= 0)
+    always_same_h_refit = (always_same_h_refit_int /= 0)
     res_tol = 1.0d-6
     max_empty_pivot_retries = 3
     ierr = 0
@@ -991,6 +993,15 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 return
             end if
 
+            if (always_same_h_refit) then
+                call try_same_h_refit(refit_recertified)
+                if (.not. refit_recertified) then
+                    do i = 1, m
+                        r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                    end do
+                end if
+            end if
+
             ! DEBUG: Print H values and solution for rd=2
 !DEBUG            if (rd == 2) then
 !DEBUG                write(*,*) '=== H extraction at rd=2 (successful iteration) ==='
@@ -1044,7 +1055,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 else
                     accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                    if (.not. accept_subsample) then
+                    if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
                         call try_same_h_refit(refit_recertified)
                         if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                     end if
@@ -1080,7 +1091,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end if
             else
                 accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                if (.not. accept_subsample) then
+                if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
                     call try_same_h_refit(refit_recertified)
                     if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                 end if
@@ -1680,6 +1691,15 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 return
             end if
 
+            if (always_same_h_refit) then
+                call try_same_h_refit(refit_recertified)
+                if (.not. refit_recertified) then
+                    do i = 1, m
+                        r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                    end do
+                end if
+            end if
+
             ! Check bad signs and certify using raw residuals.
             if (count(sl) > 0 .or. count(sh) > 0) then
                 n_bad_signs = 0
@@ -1702,7 +1722,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 else
                     accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                    if (.not. accept_subsample) then
+                    if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
                         call try_same_h_refit(refit_recertified)
                         if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                     end if
@@ -1738,7 +1758,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end if
             else
                 accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
-                if (.not. accept_subsample) then
+                if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
                     call try_same_h_refit(refit_recertified)
                     if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                 end if

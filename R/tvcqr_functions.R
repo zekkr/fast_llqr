@@ -1617,7 +1617,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                                            Mm.factor = 1e-4, eps = 1e-06,
                                            store_residual = FALSE, fallback = FALSE,
                                            debug_trace = FALSE,
-                                           min_subsample_size = NULL) {
+                                           min_subsample_size = NULL,
+                                           always_same_h_refit = TRUE) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1723,6 +1724,7 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      ierr = as.integer(0),
                      failed_eval = as.integer(0),
                      min_subsample_size_in = as.integer(min_subsample_size_in),
+                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 

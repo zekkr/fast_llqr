@@ -93,6 +93,7 @@ Diagnostic scripts or debug-enabled solver calls should print or return at least
 - `n_positive_weight`
 - `positive_weight_rank`
 - `Mm.factor`
+- `always_same_h_refit`
 - `threshold`
 - `n_sl`
 - `n_sh`
