@@ -37,6 +37,18 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+as_optional_nonneg_int <- function(x) {
+  raw <- trimws(Sys.getenv(x, unset = NA_character_))
+  if (is.na(raw) || nchar(raw) == 0 ||
+      tolower(raw) %in% c("null", "na", "default")) {
+    return(NULL)
+  }
+  value <- suppressWarnings(as.numeric(raw))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) || value < 0) {
+    stop(sprintf("%s must be empty/default or a non-negative finite scalar, got: %s", x, raw))
+  }
+  as.integer(ceiling(value))
+}
 parse_rep_id_pool <- function(num_rep) {
   rep_file <- Sys.getenv("FASTQR_REP_ID_FILE", unset = NA_character_)
   rep_list <- Sys.getenv("FASTQR_REP_ID_LIST", unset = NA_character_)
@@ -131,6 +143,8 @@ seed_base <- as_int("FASTQR_SEED_BASE", 2025)
 J         <- as_int("FASTQR_J", 100)
 burn_in   <- as_int("FASTQR_BURN_IN", 500)
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
+min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 require_nonneg_int(J, "FASTQR_J")
 require_nonneg_int(burn_in, "FASTQR_BURN_IN")
 
@@ -149,7 +163,9 @@ config_base <- list(
   cpp_helper = cpp_helper,
   seed_base = seed_base,
   J = J,
-  burn_in = burn_in
+  burn_in = burn_in,
+  min_subsample_size = min_subsample_size,
+  always_same_h_refit = always_same_h_refit
 )
 config_base <- complete_tvcqr_sim_config(config_base)
 
@@ -170,6 +186,8 @@ if (sparse_mode) {
 }
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
+cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
+cat("always_same_h_refit:", always_same_h_refit, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")
@@ -231,17 +249,20 @@ run_one <- function(rep_id) {
 
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
       H_seq_list     <- if (save_h_seq) setNames(vector("list", length(method_names)), method_names) else NULL
+      method_metadata <- setNames(vector("list", length(method_names)), method_names)
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
         if (save_h_seq) {
           H_seq_list[[m]] <- list(rr$H_seq[[m]])
         }
+        method_metadata[[m]] <- if (!is.null(rr$method_metadata)) rr$method_metadata[[m]] else NULL
       }
 
       partial_results <- list(
         config = rep_config,
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
+        method_metadata = method_metadata,
         method_names = method_names,
         Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
         timestamp = Sys.time(),

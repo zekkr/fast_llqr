@@ -2,6 +2,24 @@
 # TVCQR Simulation Helper Functions
 # ============================================================================ #
 
+tvcqr_sim_bool <- function(value, default, name) {
+  if (is.null(value)) {
+    return(default)
+  }
+  if (is.logical(value) && length(value) == 1L && !is.na(value)) {
+    return(value)
+  }
+  if (is.numeric(value) && length(value) == 1L && is.finite(value) && value %in% c(0, 1)) {
+    return(as.logical(value))
+  }
+  if (is.character(value) && length(value) == 1L) {
+    normalized <- tolower(trimws(value))
+    if (normalized %in% c("1", "true", "t", "yes", "y", "on")) return(TRUE)
+    if (normalized %in% c("0", "false", "f", "no", "n", "off")) return(FALSE)
+  }
+  stop(sprintf("config$%s must be a boolean scalar.", name))
+}
+
 complete_tvcqr_sim_config <- function(config) {
   case_info <- resolve_tvcqr_case(config$case)
   config$case <- case_info$case_id
@@ -11,6 +29,23 @@ complete_tvcqr_sim_config <- function(config) {
   config$seed_base <- if (is.null(config$seed_base)) 2025L else as.integer(config$seed_base)
   config$J <- if (is.null(config$J)) 100L else as.integer(config$J)
   config$burn_in <- if (is.null(config$burn_in)) 500L else as.integer(config$burn_in)
+  config$always_same_h_refit <- tvcqr_sim_bool(
+    config$always_same_h_refit,
+    default = TRUE,
+    name = "always_same_h_refit"
+  )
+  if (is.null(config$min_subsample_size)) {
+    config$min_subsample_size <- NULL
+  } else {
+    min_subsample_size_numeric <- as.numeric(config$min_subsample_size)
+    if (length(min_subsample_size_numeric) != 1L ||
+        is.na(min_subsample_size_numeric) ||
+        !is.finite(min_subsample_size_numeric) ||
+        min_subsample_size_numeric < 0) {
+      stop("config$min_subsample_size must be NULL or a non-negative finite scalar.")
+    }
+    config$min_subsample_size <- as.integer(ceiling(min_subsample_size_numeric))
+  }
   
   if (is.na(config$seed_base)) {
     stop("config$seed_base must be an integer.")
@@ -97,13 +132,30 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
       methods[[method_name_fortran]] <- local({
         Mm_factor_local <- Mm_val
         function(x, y, config) {
-          tvcqr_seq_ppro_fortran_wrapper(x = x, y = y, tau = config$tau,
-                                         h = config$h, h.factor = config$h.factor,
-                                         tol = config$tol, maxit = config$maxit,
-                                         bland = config$bland,
-                                         Mm.factor = Mm_factor_local,
-                                         eps = config$eps,
-                                         store_residual = FALSE)
+          call_args <- list(
+            x = x,
+            y = y,
+            tau = config$tau,
+            h = config$h,
+            h.factor = config$h.factor,
+            tol = config$tol,
+            maxit = config$maxit,
+            bland = config$bland,
+            Mm.factor = Mm_factor_local,
+            eps = config$eps,
+            store_residual = FALSE,
+            fallback = FALSE
+          )
+          if ("debug_trace" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$debug_trace <- isTRUE(config$debug_trace)
+          }
+          if ("min_subsample_size" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$min_subsample_size <- config$min_subsample_size
+          }
+          if ("always_same_h_refit" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$always_same_h_refit <- config$always_same_h_refit
+          }
+          do.call(tvcqr_seq_ppro_fortran_wrapper, call_args)
         }
       })
     }
@@ -121,6 +173,92 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
 #' @export
 run_single_tvcqr_replication <- function(rep_id, config, methods) {
   config <- complete_tvcqr_sim_config(config)
+  first_or <- function(value, default) {
+    if (is.null(value) || length(value) == 0L) {
+      return(default)
+    }
+    value[[1L]]
+  }
+  summarize_numeric <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    x <- suppressWarnings(as.numeric(value))
+    x <- x[is.finite(x)]
+    if (length(x) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    list(min = min(x), max = max(x), mean = mean(x))
+  }
+  sum_compact_count <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(NA_integer_)
+    }
+    x <- suppressWarnings(as.numeric(value))
+    if (all(is.na(x))) {
+      return(NA_integer_)
+    }
+    as.integer(sum(x, na.rm = TRUE))
+  }
+  int_vec_or_null <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(NULL)
+    }
+    as.integer(value)
+  }
+  summarize_numeric_eval <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    x <- suppressWarnings(as.numeric(value))
+    if (length(x) >= 2L) {
+      x <- x[-1L]
+    }
+    x <- x[is.finite(x)]
+    if (length(x) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    list(min = min(x), max = max(x), mean = mean(x))
+  }
+  first_pass_summary <- function(repair_count, returned_backend, fallback_triggered) {
+    if (is.null(repair_count) || length(repair_count) < 2L ||
+        !identical(returned_backend, "ppro") || isTRUE(fallback_triggered)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    x <- as.integer(repair_count[-1L])
+    known <- !is.na(x)
+    if (!any(known)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    count <- as.integer(sum(x[known] == 0L))
+    total <- as.integer(sum(known))
+    list(count = count, total = total, rate = count / total)
+  }
+  summarize_certification_log <- function(certification_log) {
+    if (is.null(certification_log) || length(certification_log) == 0L) {
+      return(list(cert_ok_count = NA_integer_, cert_total = NA_integer_))
+    }
+    cert_ok_values <- vapply(certification_log, function(entry) {
+      if (is.null(entry)) {
+        return(NA)
+      }
+      if (!is.null(entry$cert_ok)) {
+        return(isTRUE(entry$cert_ok))
+      }
+      if (!is.null(entry$certification) && !is.null(entry$certification$cert_ok)) {
+        return(isTRUE(entry$certification$cert_ok))
+      }
+      NA
+    }, logical(1))
+    known <- !is.na(cert_ok_values)
+    if (!any(known)) {
+      return(list(cert_ok_count = NA_integer_, cert_total = NA_integer_))
+    }
+    list(
+      cert_ok_count = as.integer(sum(cert_ok_values[known])),
+      cert_total = as.integer(sum(known))
+    )
+  }
   seed_used <- if (!is.null(config$seed_used)) {
     as.integer(config$seed_used)
   } else {
@@ -142,11 +280,13 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
   results <- list(
     estimates = vector("list", length(methods)),
     H_seq = vector("list", length(methods)),
-    timing = numeric(length(methods))
+    timing = numeric(length(methods)),
+    method_metadata = vector("list", length(methods))
   )
   names(results$estimates) <- names(methods)
   names(results$H_seq) <- names(methods)
   names(results$timing) <- names(methods)
+  names(results$method_metadata) <- names(methods)
   
   # Run each method
   for (method_name in names(methods)) {
@@ -168,12 +308,63 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     # Store results
     results$estimates[[method_name]] <- fit$theta_ll_est
     
-    # Store H_seq if it exists in the fit object
-    if (!is.null(fit$H_seq)) {
-      results$H_seq[[method_name]] <- fit$H_seq
-    } else {
-      results$H_seq[[method_name]] <- NULL
-    }
+    # Use single-bracket assignment so NULL remains an explicit named slot.
+    results$H_seq[method_name] <- list(if (!is.null(fit$H_seq)) fit$H_seq else NULL)
+
+    returned_backend <- as.character(first_or(fit$returned_backend, NA_character_))
+    fallback_triggered <- if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered)
+    final_n_sub <- if (!is.null(fit$final_n_sub)) fit$final_n_sub else fit$n_sub
+    n_sub_summary <- summarize_numeric(final_n_sub)
+    first_n_sub_summary <- summarize_numeric_eval(fit$first_n_sub)
+    final_n_sub_summary <- summarize_numeric_eval(final_n_sub)
+    repair_count_summary <- summarize_numeric_eval(fit$repair_count)
+    first_pass <- first_pass_summary(fit$repair_count, returned_backend, fallback_triggered)
+    cert_summary <- summarize_certification_log(fit$certification_log)
+    results$method_metadata[[method_name]] <- list(
+      h_used = if (!is.null(fit$h_used)) {
+        as.numeric(fit$h_used)
+      } else if (!is.null(fit$h)) {
+        as.numeric(fit$h)
+      } else if (!is.null(config$h)) {
+        as.numeric(config$h)
+      } else {
+        NA_real_
+      },
+      h_factor = as.numeric(first_or(config$h.factor, NA_real_)),
+      min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
+      always_same_h_refit = isTRUE(config$always_same_h_refit),
+      returned_backend = returned_backend,
+      fallback_triggered = fallback_triggered,
+      fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),
+      failure_reason = as.character(first_or(fit$failure_reason, NA_character_)),
+      cert_fail_detected = if (is.null(fit$cert_fail_detected)) NA else isTRUE(fit$cert_fail_detected),
+      first_failed_eval = as.integer(first_or(fit$first_failed_eval, NA_integer_)),
+      failed_eval = as.integer(first_or(fit$failed_eval, NA_integer_)),
+      backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_)),
+      backend_failed_eval = as.integer(first_or(fit$backend_failed_eval, NA_integer_)),
+      n_sub_min = n_sub_summary$min,
+      n_sub_max = n_sub_summary$max,
+      n_sub_mean = n_sub_summary$mean,
+      first_n_sub = int_vec_or_null(fit$first_n_sub),
+      repair_count = int_vec_or_null(fit$repair_count),
+      final_n_sub = int_vec_or_null(final_n_sub),
+      first_n_sub_min = first_n_sub_summary$min,
+      first_n_sub_max = first_n_sub_summary$max,
+      first_n_sub_mean = first_n_sub_summary$mean,
+      final_n_sub_min = final_n_sub_summary$min,
+      final_n_sub_max = final_n_sub_summary$max,
+      final_n_sub_mean = final_n_sub_summary$mean,
+      repair_count_min = repair_count_summary$min,
+      repair_count_max = repair_count_summary$max,
+      repair_count_mean = repair_count_summary$mean,
+      first_pass_count = first_pass$count,
+      first_pass_total = first_pass$total,
+      first_pass_rate = first_pass$rate,
+      same_h_refit_attempted_count = sum_compact_count(fit$same_h_refit_attempted),
+      same_h_refit_recovered_count = sum_compact_count(fit$same_h_refit_recovered),
+      cert_ok_count = cert_summary$cert_ok_count,
+      cert_total = cert_summary$cert_total
+    )
     
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean
@@ -238,6 +429,13 @@ run_tvcqr_simulation <- function(config) {
   for (i in seq_along(method_names)) {
     H_seq_list[[i]] <- vector("list", config$num_rep)
   }
+
+  # Compact metadata list: one list per method, each containing num_rep records.
+  method_metadata_list <- vector("list", num_methods)
+  names(method_metadata_list) <- method_names
+  for (i in seq_along(method_names)) {
+    method_metadata_list[[i]] <- vector("list", config$num_rep)
+  }
   
   # Run replications with progress tracking
   cat("Running replications...\n")
@@ -251,7 +449,8 @@ run_tvcqr_simulation <- function(config) {
     for (method_name in method_names) {
       timing_matrix[rep, method_name] <- rep_results$timing[[method_name]]
       estimates_list[[method_name]][[rep]] <- rep_results$estimates[[method_name]]
-      H_seq_list[[method_name]][[rep]] <- rep_results$H_seq[[method_name]]
+      H_seq_list[[method_name]][rep] <- list(rep_results$H_seq[[method_name]])
+      method_metadata_list[[method_name]][[rep]] <- rep_results$method_metadata[[method_name]]
     }
     
     # Update progress bar
@@ -267,6 +466,7 @@ run_tvcqr_simulation <- function(config) {
     timing_matrix = timing_matrix,
     estimates_list = estimates_list,
     H_seq_list = H_seq_list,
+    method_metadata_list = method_metadata_list,
     method_names = method_names,
     Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config$Mm.factor),
     timestamp = Sys.time(),
@@ -372,6 +572,88 @@ print_tvcqr_simulation_summary <- function(results) {
   
   print(timing_summary, row.names = FALSE, digits = 4)
   cat("\n")
+
+  if (!is.null(results$method_metadata_list)) {
+    first_or <- function(value, default) {
+      if (is.null(value) || length(value) == 0L) {
+        return(default)
+      }
+      value[[1L]]
+    }
+    compact_count <- function(values, predicate) {
+      if (length(values) == 0L || all(is.na(values))) {
+        return(NA_integer_)
+      }
+      as.integer(sum(predicate(values), na.rm = TRUE))
+    }
+    compact_sum <- function(values) {
+      if (length(values) == 0L || all(is.na(values))) {
+        return(NA_integer_)
+      }
+      as.integer(sum(values, na.rm = TRUE))
+    }
+    extract_field <- function(records, field, default = NA) {
+      vapply(records, function(record) {
+        if (is.null(record) || is.null(record[[field]])) {
+          return(default)
+        }
+        first_or(record[[field]], default)
+      }, default)
+    }
+
+    provenance_summary <- lapply(results$method_names, function(method_name) {
+      records <- results$method_metadata_list[[method_name]]
+      records <- records[!vapply(records, is.null, logical(1))]
+      if (length(records) == 0L) {
+        return(data.frame(
+          Method = method_name,
+          Returned_Backend_Counts = NA_character_,
+          Fallback_Triggered = NA_integer_,
+          Backend_Ierr_Nonzero = NA_integer_,
+          Cert_Fail_Detected = NA_integer_,
+          Same_H_Refit_Attempted = NA_integer_,
+          Same_H_Refit_Recovered = NA_integer_,
+          stringsAsFactors = FALSE
+        ))
+      }
+
+      returned_backend <- extract_field(records, "returned_backend", NA_character_)
+      returned_backend <- returned_backend[!is.na(returned_backend) & nzchar(returned_backend)]
+      backend_counts <- if (length(returned_backend) == 0L) {
+        NA_character_
+      } else {
+        tab <- table(returned_backend)
+        paste(sprintf("%s=%d", names(tab), as.integer(tab)), collapse = ", ")
+      }
+
+      fallback_triggered <- extract_field(records, "fallback_triggered", NA)
+      backend_ierr <- suppressWarnings(as.integer(extract_field(records, "backend_ierr", NA_integer_)))
+      cert_fail_detected <- extract_field(records, "cert_fail_detected", NA)
+      same_h_attempted <- suppressWarnings(as.integer(
+        extract_field(records, "same_h_refit_attempted_count", NA_integer_)
+      ))
+      same_h_recovered <- suppressWarnings(as.integer(
+        extract_field(records, "same_h_refit_recovered_count", NA_integer_)
+      ))
+
+      data.frame(
+        Method = method_name,
+        Returned_Backend_Counts = backend_counts,
+        Fallback_Triggered = compact_count(fallback_triggered, function(x) x == TRUE),
+        Backend_Ierr_Nonzero = compact_count(backend_ierr, function(x) !is.na(x) & x != 0L),
+        Cert_Fail_Detected = compact_count(cert_fail_detected, function(x) x == TRUE),
+        Same_H_Refit_Attempted = compact_sum(same_h_attempted),
+        Same_H_Refit_Recovered = compact_sum(same_h_recovered),
+        stringsAsFactors = FALSE
+      )
+    })
+
+    provenance_summary <- do.call(rbind, provenance_summary)
+    cat("Ppro Provenance Summary:\n")
+    cat("----------------------------------------\n")
+    print(provenance_summary, row.names = FALSE)
+    cat("\n")
+  }
   
   # Calculate maximum average relative bias
   cat("\nMaximum Average Relative Bias (relative to tvc_rq):\n")

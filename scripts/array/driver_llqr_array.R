@@ -53,6 +53,19 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+as_optional_pos_int <- function(x) {
+  raw <- trimws(Sys.getenv(x, unset = NA_character_))
+  if (is.na(raw) || nchar(raw) == 0 ||
+      tolower(raw) %in% c("null", "na", "default")) {
+    return(NULL)
+  }
+  value <- suppressWarnings(as.numeric(raw))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) ||
+      value < 1L || value != floor(value)) {
+    stop(sprintf("%s must be empty/default or a positive integer, got: %s", x, raw))
+  }
+  as.integer(value)
+}
 parse_rep_id_pool <- function(num_rep) {
   rep_file <- Sys.getenv("FASTQR_REP_ID_FILE", unset = NA_character_)
   rep_list <- Sys.getenv("FASTQR_REP_ID_LIST", unset = NA_character_)
@@ -136,6 +149,8 @@ max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
 timeout_fork_mode <- as_timeout_fork_mode("FASTQR_USE_TIMEOUT_FORK", "auto")
 parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
+min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
@@ -176,7 +191,9 @@ config_base <- list(
   bland = bland,
   track_order = track_order,
   Mm.factor = Mm.factor,
-  seed_base = seed_base
+  seed_base = seed_base,
+  min_subsample_size = min_subsample_size,
+  always_same_h_refit = always_same_h_refit
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
@@ -197,6 +214,8 @@ if (sparse_mode) {
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("h.factor:", h.factor, "\n")
+cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
+cat("always_same_h_refit:", always_same_h_refit, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")

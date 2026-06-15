@@ -125,12 +125,20 @@ When verification fails, the solver must not return the failed reduced solution.
 
 After any threshold or set change, all dependent quantities must be recomputed. Reusing stale aggregate rows or stale counts is a correctness bug.
 
-When a candidate has no bad signs and the same reported `H` rows are in range,
-distinct, and full rank, a ppro implementation may take one numerical rescue
-step before rejection: refit the estimate from that same `H`, then run
-certification once more. This same-`H` refit is only a stabilization step; it
-must not change `H`, relax tolerances, bypass certification, or replace the
-existing reject, expand, or fallback path if recertification still fails.
+Same-`H` refit is a numerical stabilization step, not a different estimator.
+The default ppro mode is `always_same_h_refit = TRUE`: after the solver reports
+an in-range, distinct, full-rank `H`, it refits the estimate from that same `H`,
+then uses the refit residuals for bad-sign verification and certification.
+
+The explicit `always_same_h_refit = FALSE` mode is rescue-only: when a candidate
+has no bad signs and the same reported `H` rows are in range, distinct, and full
+rank, a ppro implementation may take one numerical rescue step before rejection
+by refitting the estimate from that same `H`, then running certification once
+more.
+
+In either mode, same-`H` refit must not change `H`, relax tolerances, bypass
+certification, or replace the existing reject, expand, or fallback path if
+certification still fails.
 
 ## Certified ppro output
 

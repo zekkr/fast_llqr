@@ -161,6 +161,183 @@ generate_ts <- function(n, case = 1, seed = NULL, J = 100L, burn_in = 500L) {
 }
 
 # ============================================================================ #
+# TVCQR Candidate Certification Helpers
+# ============================================================================ #
+tvcqr_quantile_loss <- function(r, tau) {
+  r <- as.numeric(r)
+  r * (tau - (r < 0))
+}
+
+tvcqr_full_objective <- function(estimate, A, y, w, tau) {
+  estimate <- as.numeric(estimate)
+  A <- as.matrix(A)
+  y <- as.numeric(y)
+  w <- as.numeric(w)
+  r <- as.numeric(y - A %*% estimate)
+  sum(w * tvcqr_quantile_loss(r, tau))
+}
+
+tvcqr_set_equal_int <- function(x, y) {
+  x <- sort(unique(as.integer(x)))
+  y <- sort(unique(as.integer(y)))
+  identical(x, y)
+}
+
+tvcqr_classify_candidate <- function(cert) {
+  if (!isTRUE(cert$candidate_H_in_range)) {
+    return("invalid_H")
+  }
+  if (!isTRUE(cert$candidate_rank_ok)) {
+    return("singular_H")
+  }
+  if (!isTRUE(cert$candidate_H_valid)) {
+    return("H_not_zero")
+  }
+  if (!isTRUE(cert$candidate_in_zero_set)) {
+    return("H_not_in_zero_set")
+  }
+  if (!isTRUE(cert$objective_finite)) {
+    return("objective_not_finite")
+  }
+  "certified"
+}
+
+certify_tvcqr_candidate_full <- function(estimate_candidate, H_candidate, A, y, w, tau,
+                                         baseline_estimate = NULL, baseline_H = NULL,
+                                         residual_tol = 1e-8, rank_tol = 1e-10,
+                                         obj_tol = 1e-10) {
+  estimate_candidate <- as.numeric(estimate_candidate)
+  H_candidate <- as.integer(H_candidate)
+  A <- as.matrix(A)
+  y <- as.numeric(y)
+  w <- as.numeric(w)
+
+  p <- ncol(A)
+  beta_finite <- length(estimate_candidate) == p && all(is.finite(estimate_candidate))
+  r <- if (beta_finite) {
+    as.numeric(y - A %*% estimate_candidate)
+  } else {
+    rep(NA_real_, length(y))
+  }
+  zero_idx <- which(abs(r) <= residual_tol)
+
+  candidate_H_in_range <- length(H_candidate) == p &&
+    !anyNA(H_candidate) &&
+    !any(H_candidate < 1L | H_candidate > nrow(A)) &&
+    !anyDuplicated(H_candidate)
+  candidate_rank_ok <- candidate_H_in_range &&
+    (qr(A[H_candidate, , drop = FALSE], tol = rank_tol)$rank == p)
+  candidate_zero_ok <- beta_finite && candidate_H_in_range &&
+    all(abs(r[H_candidate]) <= residual_tol)
+  candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
+  candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
+
+  obj_full <- if (beta_finite) {
+    tvcqr_full_objective(
+      estimate = estimate_candidate,
+      A = A,
+      y = y,
+      w = w,
+      tau = tau
+    )
+  } else {
+    NA_real_
+  }
+  objective_finite <- is.finite(obj_full)
+  obj_full_seq <- if (!is.null(baseline_estimate)) {
+    tvcqr_full_objective(
+      estimate = baseline_estimate,
+      A = A,
+      y = y,
+      w = w,
+      tau = tau
+    )
+  } else {
+    NA_real_
+  }
+  obj_gap_vs_seq <- if (is.finite(obj_full_seq)) obj_full - obj_full_seq else NA_real_
+  obj_ok_vs_seq <- if (is.finite(obj_gap_vs_seq)) obj_gap_vs_seq <= obj_tol else NA
+
+  h_set_match_vs_seq <- if (!is.null(baseline_H)) {
+    tvcqr_set_equal_int(H_candidate, baseline_H)
+  } else {
+    NA
+  }
+
+  psi_mid <- if (beta_finite) tau - as.numeric(r < 0) else rep(NA_real_, length(y))
+  kkt_score_mid <- if (beta_finite) {
+    as.numeric(crossprod(A, w * psi_mid))
+  } else {
+    rep(NA_real_, p)
+  }
+  kkt_score_mid_max_abs <- suppressWarnings(max(abs(kkt_score_mid), na.rm = TRUE))
+  if (!is.finite(kkt_score_mid_max_abs)) {
+    kkt_score_mid_max_abs <- NA_real_
+  }
+
+  cert_ok <- beta_finite && candidate_H_valid && candidate_in_zero_set && objective_finite
+
+  list(
+    cert_ok = cert_ok,
+    beta_finite = beta_finite,
+    obj_full = obj_full,
+    obj_full_seq = obj_full_seq,
+    obj_gap_vs_seq = obj_gap_vs_seq,
+    obj_ok_vs_seq = obj_ok_vs_seq,
+    objective_finite = objective_finite,
+    H_recovered_from_full = zero_idx,
+    candidate_H_in_range = candidate_H_in_range,
+    candidate_rank_ok = candidate_rank_ok,
+    candidate_zero_ok = candidate_zero_ok,
+    candidate_H_valid = candidate_H_valid,
+    candidate_in_zero_set = candidate_in_zero_set,
+    h_set_match_vs_seq = h_set_match_vs_seq,
+    kkt_score_mid = kkt_score_mid,
+    kkt_score_mid_max_abs = kkt_score_mid_max_abs,
+    residual = r
+  )
+}
+
+build_tvcqr_full_cert_record <- function(round, backend,
+                                         estimate_candidate, H_candidate,
+                                         A, y, w, tau,
+                                         baseline_estimate = NULL,
+                                         baseline_H = NULL,
+                                         residual_tol = 1e-8,
+                                         rank_tol = 1e-10,
+                                         obj_tol = 1e-10) {
+  cert <- certify_tvcqr_candidate_full(
+    estimate_candidate = estimate_candidate,
+    H_candidate = H_candidate,
+    A = A,
+    y = y,
+    w = w,
+    tau = tau,
+    baseline_estimate = baseline_estimate,
+    baseline_H = baseline_H,
+    residual_tol = residual_tol,
+    rank_tol = rank_tol,
+    obj_tol = obj_tol
+  )
+
+  list(
+    round = as.integer(round),
+    backend = backend,
+    estimate_candidate = as.numeric(estimate_candidate),
+    H_candidate = as.integer(H_candidate),
+    seq_H = if (!is.null(baseline_H)) as.integer(baseline_H) else NULL,
+    certification = cert,
+    candidate_class = tvcqr_classify_candidate(cert),
+    fallback_triggered = !isTRUE(cert$cert_ok),
+    obj_full = cert$obj_full,
+    obj_full_seq = cert$obj_full_seq,
+    obj_gap_vs_seq = cert$obj_gap_vs_seq,
+    H_recovered_from_full = cert$H_recovered_from_full,
+    h_set_match_vs_seq = cert$h_set_match_vs_seq
+  )
+}
+
+# ============================================================================ #
 # Time-varying coefficient quantile regression by Local linear estimator (Using 'Quantreg')
 # ============================================================================ #
 tvc_rq <- function (x, y, tau = 0.5, h = NULL) {
@@ -576,7 +753,7 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
   round_debug <- if (debug_trace) vector("list", m) else NULL
   # test_sl_sh <- rep(0, m)
   n_sub[1] <- m
-  min_subsample_size <- max(5 * (nvar + 1), ceiling(0.2 * m))
+  min_subsample_size <- max(5 * (2 * (nvar + 1)), ceiling(0.2 * m))
   residual_tol <- 1e-6
   rank_tol <- 1e-10
   max_empty_pivot_retries <- 3L
@@ -1438,7 +1615,10 @@ tvcqr_seq_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, tol = 1e-14,
 tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, 
                                            tol = 1e-14, maxit = 1e6, bland = FALSE, 
                                            Mm.factor = 1e-4, eps = 1e-06,
-                                           store_residual = TRUE, fallback = FALSE) {
+                                           store_residual = FALSE, fallback = FALSE,
+                                           debug_trace = FALSE,
+                                           min_subsample_size = NULL,
+                                           always_same_h_refit = TRUE) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1468,6 +1648,19 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   if (tau <= 0 || tau >= 1) {
     stop("tau must be between 0 and 1 (exclusive). Current value: ", tau)
   }
+
+  if (is.null(min_subsample_size)) {
+    min_subsample_size_in <- max(5L * (2L * (nvar + 1L)), ceiling(0.2 * m))
+  } else {
+    min_subsample_size_numeric <- as.numeric(min_subsample_size)
+    if (length(min_subsample_size_numeric) != 1L ||
+        is.na(min_subsample_size_numeric) ||
+        !is.finite(min_subsample_size_numeric) ||
+        min_subsample_size_numeric < 0) {
+      stop("min_subsample_size must be a non-negative finite scalar or NULL.")
+    }
+    min_subsample_size_in <- as.integer(ceiling(min_subsample_size_numeric))
+  }
   
   # Handle bandwidth parameter
   # If h is NULL or 0, the Fortran code will calculate it using h.factor
@@ -1483,11 +1676,20 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # Prepare output arrays with proper dimensions
   # These arrays will be filled by the Fortran subroutine
   theta_ll_est <- matrix(0.0, nrow = m, ncol = nvar + 1)
+  beta_full_est <- matrix(0.0, nrow = m, ncol = 2 * (nvar + 1))
   it_num <- integer(m)
-  residual_est_backend <- matrix(0.0, nrow = m, ncol = m)
+  residual_buffer <- if (isTRUE(store_residual)) {
+    matrix(0.0, nrow = m, ncol = m)
+  } else {
+    double(1L)
+  }
   M_out <- 0.0
-  n_sub <- integer(m)
+  first_n_sub <- integer(m)
+  repair_count <- integer(m)
+  final_n_sub <- integer(m)
   H_seq <- matrix(0L, nrow = m, ncol = 2 * (nvar + 1))
+  same_h_refit_attempted <- integer(m)
+  same_h_refit_recovered <- integer(m)
   acceptance_diagnostics <- vector("list", m)
   certification_log <- vector("list", m)
   residual_tol <- 1e-6
@@ -1509,20 +1711,29 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      bland_int = as.integer(bland),       # Convert logical to integer
                      Mm_factor = as.double(Mm.factor),    
                      eps = as.double(eps),                
-                     store_residual_int = as.integer(1L),
+                     store_residual_int = as.integer(isTRUE(store_residual)),
+                     debug_int = as.integer(isTRUE(debug_trace)),
                      # Output arguments - pre-allocated arrays
                      theta_ll_est = as.double(theta_ll_est),
+                     beta_full_est = as.double(beta_full_est),
                      it_num = as.integer(it_num),
-                     residual_est = as.double(residual_est_backend),
+                     residual_est = as.double(residual_buffer),
                      M_out = as.double(M_out),
-                     n_sub = as.integer(n_sub),
+                     first_n_sub = as.integer(first_n_sub),
+                     repair_count = as.integer(repair_count),
+                     final_n_sub = as.integer(final_n_sub),
                      H_seq = as.integer(H_seq),
+                     same_h_refit_attempted = as.integer(same_h_refit_attempted),
+                     same_h_refit_recovered = as.integer(same_h_refit_recovered),
                      ierr = as.integer(0),
                      failed_eval = as.integer(0),
+                     min_subsample_size_in = as.integer(min_subsample_size_in),
+                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 
-  make_return <- function(theta_value, it_value, residual_value, M_value, n_sub_value,
+  make_return <- function(theta_value, beta_full_value, it_value, residual_value, M_value,
+                          first_n_sub_value, repair_count_value, final_n_sub_value,
                           H_value, returned_backend, first_failed_eval = NA_integer_,
                           failure_reason = NULL, failure_info = NULL,
                           fallback_triggered = FALSE, fallback_reason = NULL) {
@@ -1533,14 +1744,20 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     }
     list(
       theta_ll_est = theta_value,
+      beta_full_est = beta_full_value,
       it_num = as.integer(it_value),
       residual_est = residual_value,
       M = M_value,
-      n_sub = as.integer(n_sub_value),
+      first_n_sub = as.integer(first_n_sub_value),
+      repair_count = as.integer(repair_count_value),
+      final_n_sub = as.integer(final_n_sub_value),
+      n_sub = as.integer(final_n_sub_value),
       H_seq = H_value,
       h = result$h,
       acceptance_diagnostics = acceptance_diagnostics,
       certification_log = certification_log,
+      same_h_refit_attempted = as.integer(result$same_h_refit_attempted),
+      same_h_refit_recovered = as.integer(result$same_h_refit_recovered),
       first_failed_eval = first_failed_eval,
       first_bad_round = first_failed_eval,
       failed_eval = failed_eval_value,
@@ -1568,10 +1785,13 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     )
     make_return(
       theta_value = fallback_fit$theta_ll_est,
+      beta_full_value = matrix(NA_real_, nrow = m, ncol = 2 * (nvar + 1)),
       it_value = fallback_fit$it_num,
       residual_value = if (isTRUE(store_residual)) fallback_fit$residual_est else NULL,
       M_value = NA_real_,
-      n_sub_value = rep.int(m, m),
+      first_n_sub_value = rep.int(m, m),
+      repair_count_value = rep.int(NA_integer_, m),
+      final_n_sub_value = rep.int(m, m),
       H_value = fallback_fit$H_seq,
       returned_backend = "seq_fallback",
       first_failed_eval = as.integer(t_start),
@@ -1614,11 +1834,16 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   }
 
   fail_ppro_suffix <- function(t_start, reason, info = NULL,
-                               theta_value, it_value, residual_value, M_value, n_sub_value, H_value) {
+                               theta_value, beta_full_value, it_value, residual_value,
+                               M_value, first_n_sub_value, repair_count_value,
+                               final_n_sub_value, H_value) {
     idx <- t_start:m
     theta_value[idx, ] <- NA_real_
+    beta_full_value[idx, ] <- NA_real_
     it_value[idx] <- NA_integer_
-    n_sub_value[idx] <- NA_integer_
+    first_n_sub_value[idx] <- NA_integer_
+    repair_count_value[idx] <- NA_integer_
+    final_n_sub_value[idx] <- NA_integer_
     H_value[idx, ] <- NA_integer_
     if (!is.null(residual_value)) {
       residual_value[idx, ] <- NA_real_
@@ -1632,10 +1857,13 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     }
     make_return(
       theta_value = theta_value,
+      beta_full_value = beta_full_value,
       it_value = it_value,
       residual_value = residual_value,
       M_value = M_value,
-      n_sub_value = n_sub_value,
+      first_n_sub_value = first_n_sub_value,
+      repair_count_value = repair_count_value,
+      final_n_sub_value = final_n_sub_value,
       H_value = H_value,
       returned_backend = "ppro_failed",
       first_failed_eval = as.integer(t_start),
@@ -1647,8 +1875,12 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # Reshape the flattened arrays back to matrices
   # Fortran stores matrices in column-major order, same as R
   theta_ll_est <- matrix(result$theta_ll_est, nrow = m, ncol = nvar + 1, byrow = FALSE)
-  residual_est_backend <- matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
-  residual_est <- if (isTRUE(store_residual)) residual_est_backend else NULL
+  beta_full_est <- matrix(result$beta_full_est, nrow = m, ncol = 2 * (nvar + 1), byrow = FALSE)
+  residual_est <- if (isTRUE(store_residual)) {
+    matrix(result$residual_est, nrow = m, ncol = m, byrow = FALSE)
+  } else {
+    NULL
+  }
   H_seq <- matrix(result$H_seq, nrow = m, ncol = 2 * (nvar + 1), byrow = FALSE)
 
   if (!identical(as.integer(result$ierr), 0L)) {
@@ -1677,37 +1909,49 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       reason = reason,
       info = info,
       theta_value = theta_ll_est,
+      beta_full_value = beta_full_est,
       it_value = result$it_num,
       residual_value = residual_est,
       M_value = result$M_out,
-      n_sub_value = result$n_sub,
+      first_n_sub_value = result$first_n_sub,
+      repair_count_value = result$repair_count,
+      final_n_sub_value = result$final_n_sub,
       H_value = H_seq
     ))
   }
 
   A_base <- cbind(1, x)
-  A_full <- cbind(A_base, A_base * ((seq_len(m) / m)))
-  p <- 2 * (nvar + 1)
+  time_index <- seq_len(m) / m
+  A_full <- cbind(A_base, A_base * time_index)
+  h_backend <- as.numeric(result$h)
   for (eva_t in seq_len(m)) {
     H_candidate <- as.integer(H_seq[eva_t, ])
-    r_vec <- residual_est_backend[eva_t, ]
-    zero_idx <- which(abs(r_vec) <= residual_tol)
-    candidate_H_in_range <- length(H_candidate) == p &&
-      !anyNA(H_candidate) &&
-      !any(H_candidate < 1L | H_candidate > m) &&
-      !anyDuplicated(H_candidate)
-    candidate_rank_ok <- candidate_H_in_range &&
-      (qr(A_full[H_candidate, , drop = FALSE], tol = rank_tol)$rank == p)
-    candidate_zero_ok <- candidate_H_in_range &&
-      all(abs(r_vec[H_candidate]) <= residual_tol)
-    candidate_H_valid <- candidate_rank_ok && candidate_zero_ok
-    candidate_in_zero_set <- candidate_H_in_range && all(H_candidate %in% zero_idx)
-    if (!(candidate_H_valid && candidate_in_zero_set)) {
-      reason <- if (!candidate_H_in_range) {
+    w_t <- 0.75 * (1 - (((eva_t / m) - time_index) / h_backend)^2) *
+      (abs((eva_t / m) - time_index) <= h_backend)
+    certification_log[[eva_t]] <- build_tvcqr_full_cert_record(
+      round = eva_t,
+      backend = "ppro",
+      estimate_candidate = beta_full_est[eva_t, ],
+      H_candidate = H_candidate,
+      A = A_full,
+      y = y,
+      w = w_t,
+      tau = tau,
+      residual_tol = residual_tol,
+      rank_tol = rank_tol
+    )
+    certification_log[[eva_t]]$certification$backend_ierr_ok <- TRUE
+    certification_log[[eva_t]]$certification$backend_bad_sign_verification_passed <- TRUE
+    certification_log[[eva_t]]$same_h_refit_attempted <- as.integer(result$same_h_refit_attempted[eva_t])
+    certification_log[[eva_t]]$same_h_refit_recovered <- as.integer(result$same_h_refit_recovered[eva_t])
+
+    cert <- certification_log[[eva_t]]$certification
+    if (!isTRUE(cert$cert_ok)) {
+      reason <- if (!isTRUE(cert$candidate_H_in_range)) {
         "candidate_H_invalid"
-      } else if (!candidate_rank_ok) {
+      } else if (!isTRUE(cert$candidate_rank_ok)) {
         "candidate_H_singular"
-      } else if (!candidate_H_valid) {
+      } else if (!isTRUE(cert$candidate_H_valid)) {
         "candidate_H_invalid"
       } else {
         "candidate_not_in_zero_set"
@@ -1720,12 +1964,15 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
         failure_source = "wrapper_certification",
         time = eva_t,
         H_candidate = H_candidate,
-        candidate_H_in_range = candidate_H_in_range,
-        candidate_rank_ok = candidate_rank_ok,
-        candidate_zero_ok = candidate_zero_ok,
-        candidate_H_valid = candidate_H_valid,
-        candidate_in_zero_set = candidate_in_zero_set,
-        H_recovered_from_full = zero_idx
+        candidate_H_in_range = cert$candidate_H_in_range,
+        candidate_rank_ok = cert$candidate_rank_ok,
+        candidate_zero_ok = cert$candidate_zero_ok,
+        candidate_H_valid = cert$candidate_H_valid,
+        candidate_in_zero_set = cert$candidate_in_zero_set,
+        H_recovered_from_full = cert$H_recovered_from_full,
+        obj_full = cert$obj_full,
+        objective_finite = cert$objective_finite,
+        kkt_score_mid_max_abs = cert$kkt_score_mid_max_abs
       )
       acceptance_diagnostics[[eva_t]] <- c(list(reason = reason), info)
       if (isTRUE(fallback)) {
@@ -1736,10 +1983,13 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
         reason = reason,
         info = info,
         theta_value = theta_ll_est,
+        beta_full_value = beta_full_est,
         it_value = result$it_num,
         residual_value = residual_est,
         M_value = result$M_out,
-        n_sub_value = result$n_sub,
+        first_n_sub_value = result$first_n_sub,
+        repair_count_value = result$repair_count,
+        final_n_sub_value = result$final_n_sub,
         H_value = H_seq
       ))
     }
@@ -1749,10 +1999,13 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   # This structure makes it easy to access individual components
   return(make_return(
     theta_value = theta_ll_est,
+    beta_full_value = beta_full_est,
     it_value = result$it_num,
     residual_value = residual_est,
     M_value = result$M_out,
-    n_sub_value = result$n_sub,
+    first_n_sub_value = result$first_n_sub,
+    repair_count_value = result$repair_count,
+    final_n_sub_value = result$final_n_sub,
     H_value = H_seq,
     returned_backend = "ppro"
   ))

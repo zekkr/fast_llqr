@@ -5,25 +5,34 @@
 ! or: gfortran -shared -fPIC -o tvcqr_seq_M_acc.so tvcqr_seq_M_acc.f90 -llapack -lblas
 
 subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
-                                   bland_int, Mm_factor, eps, store_residual_int, &
-                                   theta_ll_est, it_num, residual_est, &
-                                   M_out, n_sub, H_seq, ierr, failed_eval)
+                                   bland_int, Mm_factor, eps, store_residual_int, debug_int, &
+                                   theta_ll_est, beta_full_est, it_num, residual_est, &
+                                   M_out, first_n_sub, repair_count, final_n_sub, &
+                                   H_seq, same_h_refit_attempted, &
+                                   same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in, &
+                                   always_same_h_refit_int)
     
     implicit none
     
     ! Input arguments
-    integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int
+    integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int, debug_int
+    integer, intent(in) :: min_subsample_size_in, always_same_h_refit_int
     double precision, intent(in) :: x(m, nvar), y(m), tau, tol, h_factor
     double precision, intent(in) :: Mm_factor, eps
     double precision, intent(inout) :: h
     
     ! Output arguments
     double precision, intent(out) :: theta_ll_est(m, nvar+1)
+    double precision, intent(out) :: beta_full_est(m, 2*(nvar+1))
     integer, intent(out) :: it_num(m)
-    double precision, intent(out) :: residual_est(m, m)
+    double precision, intent(out) :: residual_est(*)
     double precision, intent(out) :: M_out
-    integer, intent(out) :: n_sub(m)
+    integer, intent(out) :: first_n_sub(m)
+    integer, intent(out) :: repair_count(m)
+    integer, intent(out) :: final_n_sub(m)
     integer, intent(out) :: H_seq(m, 2*(nvar+1))
+    integer, intent(out) :: same_h_refit_attempted(m)
+    integer, intent(out) :: same_h_refit_recovered(m)
     integer, intent(out) :: ierr
     integer, intent(out) :: failed_eval
     
@@ -33,7 +42,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer :: idx_not_jl_or_jh(m)
     double precision :: temp_check
     integer :: min_subsample_size, n_potential_S
-    double precision :: residual_scale
+    double precision :: residual_scale, pivot_tol
     double precision :: abs_r(m)  ! NEW - for median of absolute residuals
     
     integer :: ms, ms_org
@@ -74,15 +83,17 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     
     double precision :: yy(m+3), ee(m+3), k_vals(m+3)
     double precision :: u(m), v(m), estimate(2*(nvar+1))
+    double precision :: estimate_refit(2*(nvar+1)), r_refit(m)
     double precision :: r(m), r_prev(m)
     double precision :: pivot_row(2*(nvar+1))
     
     integer :: i, j, k, t, eva_t, iter
     integer :: t_rr, tsep
     double precision :: rrl, min_k, temp_sum
-    logical :: bland, store_residual
+    logical :: bland, store_residual, debug_requested, always_same_h_refit
     double precision :: b_k_original
-    logical :: not_optimal, not_new_sl_sh, debug_active
+    logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok, refit_used
+    logical :: first_n_sub_recorded
     integer :: bad_signs, n_sl, n_sh, n_sure_signs
     integer :: idpos(m), idneg(m), n_idpos, n_idneg
     integer :: H_indices(2*(nvar+1)), Hbar_indices(m+2)
@@ -142,6 +153,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     ! Convert integer to logical for bland
     bland = (bland_int /= 0)
     store_residual = (store_residual_int /= 0)
+    debug_requested = (debug_int /= 0)
+    always_same_h_refit = (always_same_h_refit_int /= 0)
+    pivot_tol = max(10.0d0 * tol, 1.0d-12)
     max_empty_pivot_retries = 3
     res_tol = 1.0d-6
     
@@ -190,13 +204,18 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     ! Initialize outputs
     it_num = 0
     theta_ll_est = 0.0d0
+    beta_full_est = 0.0d0
     if (store_residual) then
-        residual_est = 0.0d0
-    else
-        residual_est(1, 1) = 0.0d0
+        do i = 1, m*m
+            residual_est(i) = 0.0d0
+        end do
     end if
-    n_sub = 0
+    first_n_sub = 0
+    repair_count = 0
+    final_n_sub = 0
     H_seq = 0
+    same_h_refit_attempted = 0
+    same_h_refit_recovered = 0
     M_out = 0.0d0
     
     ! ============================================
@@ -269,7 +288,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         r2(i) = 0
     end do
     
-    n_sub(1) = m
+    first_n_sub(1) = m
+    repair_count(1) = 0
+    final_n_sub(1) = m
     
     ! Simplex iterations for eva_t = 1
     iter = 0
@@ -375,7 +396,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             k = 0
             
             do i = 1, m+1
-                if (yy(i) > 0.0d0 .and. .not. freevarrow(i)) then
+                if (yy(i) > pivot_tol .and. .not. freevarrow(i)) then
                     k_vals(i) = b(i) / yy(i)
                     if (k_vals(i) < min_k) then
                         min_k = k_vals(i)
@@ -416,7 +437,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 k = 0
                 
                 do i = 1, m+1
-                    if (yy(i) > 0.0d0 .and. .not. freevarrow(i)) then
+                    if (yy(i) > pivot_tol .and. .not. freevarrow(i)) then
                         k_vals(i) = b(i) / yy(i)
                         if (k_vals(i) < min_k) then
                             min_k = k_vals(i)
@@ -441,7 +462,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 k = 0
                 
                 do i = 1, m+1
-                    if (yy(i) < 0.0d0 .and. .not. freevarrow(i)) then
+                    if (yy(i) < -pivot_tol .and. .not. freevarrow(i)) then
                         k_vals(i) = -b(i) / yy(i)
                         if (k_vals(i) < min_k) then
                             min_k = k_vals(i)
@@ -543,11 +564,14 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     do j = 1, nvar+1
         theta_ll_est(1, j) = estimate(j) + (1.0d0/dble(m)) * estimate(nvar+1+j)
     end do
+    do j = 1, 2*(nvar+1)
+        beta_full_est(1, j) = estimate(j)
+    end do
     
     do i = 1, m
         r_prev(i) = u(i) - v(i)
         if (store_residual) then
-            residual_est(1, i) = r_prev(i)
+            residual_est((i - 1) * m + 1) = r_prev(i)
         end if
     end do
 
@@ -589,7 +613,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-        debug_active = .false.
+        debug_active = debug_requested
         not_optimal = .true.
         not_new_sl_sh = .true.
         force_full_sample = .false.
@@ -630,6 +654,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         
         j = 0
         iter = 0  ! Initialize iteration counter here, outside preprocessing loop
+        repair_count(eva_t) = 0
+        first_n_sub_recorded = .false.
 
         preprocessing_attempts = 0
         do while (not_optimal)
@@ -690,9 +716,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 residual_scale = median_value(abs_r, m)
                 M_threshold = max(Mm_factor * mmm_thresh * log(log(dble(m))), 0.1d0 * residual_scale)
 
-                
                 ! NEW: Ensure minimum subsample size
-                min_subsample_size = max(5 * (nvar + 1), ceiling(0.2d0 * dble(m)))
+                if (min_subsample_size_in >= 0) then
+                    min_subsample_size = min_subsample_size_in
+                else
+                    min_subsample_size = max(5 * (2 * (nvar + 1)), ceiling(0.2d0 * dble(m)))
+                end if
 
                 ! Count potential observations in S
                 n_potential_S = 0
@@ -743,6 +772,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                         return
                     end if
                     empty_pivot_count = empty_pivot_count + 1
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -770,11 +800,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ms = ms_org
 
             if (ms_org < 2*(nvar+1)) then
-                write(6, *) 'WARNING: Only', ms_org, 'uncertain observations at eva_t=', eva_t
+                if (debug_active) write(6, *) 'WARNING: Only', ms_org, 'uncertain observations at eva_t=', eva_t
                 if (force_full_sample) then
                     call set_failure(5, eva_t)
                     return
                 end if
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (preprocessing_attempts >= max_empty_pivot_retries) then
@@ -933,7 +964,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             do i = 1, 2*(nvar+1)
                 if (H_seq(eva_t-1, i) > 0 .and. H_seq(eva_t-1, i) <= m) then
                     if (H_indices(i) == 0) then
-                        write(6, *) 'WARNING: H observation', H_seq(eva_t-1, i), 'not in subsample at eva_t=', eva_t
+                        if (debug_active) then
+                            write(6, *) 'WARNING: H observation', H_seq(eva_t-1, i), &
+                                'not in subsample at eva_t=', eva_t
+                        end if
                     else
                         k = k + 1
                     end if
@@ -942,12 +976,16 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Check if we have enough valid H observations
             if (k < 2*(nvar+1)) then
-                write(6, *) 'WARNING: Only', k, 'valid H observations out of', 2*(nvar+1), 'at eva_t=', eva_t
+                if (debug_active) then
+                    write(6, *) 'WARNING: Only', k, 'valid H observations out of', 2*(nvar+1), &
+                        'at eva_t=', eva_t
+                end if
                 if (force_full_sample) then
                     call set_failure(3, eva_t)
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1226,12 +1264,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 call matrix_inverse_2p(gammaxs(H_indices, :), xhinv, 2*(nvar+1), inv_info)
                 
                 if (inv_info /= 0) then
-                    write(6,*) 'X(h) is singular at eva_t = ', eva_t, ', info = ', inv_info
+                    if (debug_active) write(6,*) 'X(h) is singular at eva_t = ', eva_t, ', info = ', inv_info
                     if (force_full_sample) then
                         call set_failure(4, eva_t)
                         return
                     end if
                     empty_pivot_count = empty_pivot_count + 1
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1326,8 +1365,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 ! Last row is the objective function row
                 do j = 1, 2*(nvar+1)
                     if (H_indices(j) < 1 .or. H_indices(j) > ms) then
-                        write(6, *) 'ERROR: Invalid H_indices(', j, ')=', H_indices(j), ' at eva_t=', eva_t
-                        write(6, *) '  Valid range is 1 to', ms
+                        if (debug_active) then
+                            write(6, *) 'ERROR: Invalid H_indices(', j, ')=', H_indices(j), ' at eva_t=', eva_t
+                            write(6, *) '  Valid range is 1 to', ms
+                        end if
                         gammaxs(ms + 1, j) = 0.0d0  ! Safety fallback
                     else
                         gammaxs(ms + 1, j) = tau * ws(H_indices(j))
@@ -1871,8 +1912,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     if (H_indices(j) > 0 .and. H_indices(j) <= ms_org) then
                         gammaxs(ms + 1, j) = tau * ws(H_indices(j))
                     else
-                        write(6, *) 'ERROR: Invalid H_indices(', j, ')=', H_indices(j), ' at eva_t=', eva_t
-                        write(6, *) '  Valid range is 1 to', ms_org
+                        if (debug_active) then
+                            write(6, *) 'ERROR: Invalid H_indices(', j, ')=', H_indices(j), ' at eva_t=', eva_t
+                            write(6, *) '  Valid range is 1 to', ms_org
+                        end if
                         ! This should not happen if H observations are correctly forced into subsample
                         call set_failure(3, eva_t)
                         return
@@ -1906,12 +1949,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Invariant checks before simplex
             if (ms < 2*(nvar+1)) then
-                write(6, *) 'WARNING: Reduced problem too small at eva_t=', eva_t, ', ms=', ms
+                if (debug_active) write(6, *) 'WARNING: Reduced problem too small at eva_t=', eva_t, ', ms=', ms
                 if (force_full_sample) then
                     call set_failure(5, eva_t)
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1922,10 +1966,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Check that all beta columns are basic
             if (.not. all(freevarrow(1:2*(nvar+1)))) then
-                write(6, *) 'ERROR: Beta not basic at eva_t=', eva_t
+                if (debug_active) write(6, *) 'ERROR: Beta not basic at eva_t=', eva_t
                 do i = 1, 2*(nvar+1)
                     if (.not. freevarrow(i)) then
-                        write(6, *) '  Beta column', i, 'is not basic'
+                        if (debug_active) write(6, *) '  Beta column', i, 'is not basic'
                     end if
                 end do
             end if
@@ -1937,16 +1981,22 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ! Simplex iterations for the reduced problem
             !iter = 0
 
+            if (.not. first_n_sub_recorded) then
+                first_n_sub(eva_t) = ms
+                first_n_sub_recorded = .true.
+            end if
 
 
             do while (iter < maxit)
                 total_preprocessing_loops = total_preprocessing_loops + 1
                 ! Add a safety check to prevent infinite preprocessing:
                 if (preprocessing_attempts > 100) then
-                    write(6, *) 'ERROR: Preprocessing stuck in infinite loop at eva_t=', eva_t
-                    write(6, *) 'M_threshold:', M_threshold
-                    write(6, *) 'bad_signs:', bad_signs
-                    write(6, *) 'ms:', ms
+                    if (debug_active) then
+                        write(6, *) 'ERROR: Preprocessing stuck in infinite loop at eva_t=', eva_t
+                        write(6, *) 'M_threshold:', M_threshold
+                        write(6, *) 'bad_signs:', bad_signs
+                        write(6, *) 'ms:', ms
+                    end if
                     call set_failure(2, eva_t)
                     return
                 end if
@@ -1996,8 +2046,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 if (rrl >= 0.0d0) then
                     do i = 1, 2*(nvar+1)
                         if (r2(i) == 0 .and. rr(2, i) /= 0.0d0) then
-                            write(6, *) 'ERROR: r2 mask failed at eva_t=', eva_t
-                            write(6, *) 'Column', i, 'has r2=0 but rr(2,i)=', rr(2, i)
+                            if (debug_active) then
+                                write(6, *) 'ERROR: r2 mask failed at eva_t=', eva_t
+                                write(6, *) 'Column', i, 'has r2=0 but rr(2,i)=', rr(2, i)
+                            end if
                             call set_failure(5, eva_t)
                             return
                         end if
@@ -2015,8 +2067,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-                    write(6, *) 'SAFETY: Forcing exit from simplex at eva_t=', eva_t
-                    write(6, *) 'This prevents memory exhaustion from excessive iterations'
+                    if (debug_active) then
+                        write(6, *) 'SAFETY: Forcing exit from simplex at eva_t=', eva_t
+                        write(6, *) 'This prevents memory exhaustion from excessive iterations'
+                    end if
                     no_pivot_flag = .true.
                     exit  ! Break out of the simplex loop
                 end if
@@ -2036,19 +2090,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     exit
                 end if
 
-
-
-
-                
-                ! Additional check: if we've been iterating too long with little progress,
-                ! the problem might be degenerate
-                if (iter > 100 .and. abs(rrl) < 1.0d-6) then
-                    write(6, *) 'WARNING: Simplex making little progress at eva_t=', eva_t
-                    write(6, *) 'rrl=', rrl, 'iter=', iter
-                    ! Force exit to avoid infinite loop
-                    no_pivot_flag = .true.
-                    exit
-                end if
 
 
 
@@ -2120,7 +2161,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 
                 ! First, find all valid ratios
                 do i = 1, ms
-                    if (yy(i) > 0.0d0 .and. .not. freevarrow(i)) then
+                    if (yy(i) > pivot_tol .and. .not. freevarrow(i)) then
                         k_vals(i) = bs(i) / yy(i)
                         if (k_vals(i) < min_k) then  !k_vals(i) >= -tol .and.
                             min_k = k_vals(i)
@@ -2147,7 +2188,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
                     ! No valid pivots found - problem is unbounded
-                    write(6, *) 'The problem is unbounded, doubling m at time', eva_t
+                    if (debug_active) write(6, *) 'The problem is unbounded, doubling m at time', eva_t
                     
 
      
@@ -2177,51 +2218,50 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 ! Check if we found a valid pivot
                 if (k == 0 .or. min_k >= huge(1.0d0)) then
-                    write(6, *) 'WARNING: No valid leaving variable at eva_t=', eva_t, ', iter=', iter
-                    write(6, *) 'DETAILED DEBUG INFO:'
-                    write(6, *) '  Entering variable t=', t, ', t_rr=', t_rr, ', tsep=', tsep
-                    write(6, *) '  Total rows ms=', ms
+                    if (debug_active) then
+                        write(6, *) 'WARNING: No valid leaving variable at eva_t=', eva_t, ', iter=', iter
+                        write(6, *) 'DETAILED DEBUG INFO:'
+                        write(6, *) '  Entering variable t=', t, ', t_rr=', t_rr, ', tsep=', tsep
+                        write(6, *) '  Total rows ms=', ms
 
-                    ! Count and show non-free variables
-                    k = 0
-                    do i = 1, ms
-                        if (.not. freevarrow(i)) k = k + 1
-                    end do
-                    write(6, *) '  Number of non-free variables:', k
+                        ! Count and show non-free variables
+                        k = 0
+                        do i = 1, ms
+                            if (.not. freevarrow(i)) k = k + 1
+                        end do
+                        write(6, *) '  Number of non-free variables:', k
 
-                    ! Show details for non-free variables with positive yy
-                    write(6, *) '  Non-free vars with yy > 0:'
-                    do i = 1, ms
-                        if (.not. freevarrow(i) .and. yy(i) > 0.0d0) then
-                            write(6, '(A,I3,A,F12.6,A,F12.6,A,F12.6,A,I6)') &
-                                '    Row ', i, ': yy=', yy(i), ', bs=', bs(i), &
-                                ', ratio=', bs(i)/yy(i), ', IBs=', IBs(i)
-                        end if
-                    end do
-
-                    ! Check for negative ratios
-                    write(6, *) '  Non-free vars with yy > 0 but bs < 0 (infeasible):'
-                    k = 0
-                    do i = 1, ms
-                        if (.not. freevarrow(i) .and. yy(i) > 0.0d0 .and. bs(i) < 0.0d0) then
-                            k = k + 1
-                            if (k <= 5) then  ! Show first 5
-                                write(6, '(A,I3,A,F12.6,A,F12.6)') &
-                                    '    Row ', i, ': yy=', yy(i), ', bs=', bs(i)
+                        ! Show details for non-free variables with positive yy
+                        write(6, *) '  Non-free vars with yy > pivot_tol:'
+                        do i = 1, ms
+                            if (.not. freevarrow(i) .and. yy(i) > pivot_tol) then
+                                write(6, '(A,I3,A,F12.6,A,F12.6,A,F12.6,A,I6)') &
+                                    '    Row ', i, ': yy=', yy(i), ', bs=', bs(i), &
+                                    ', ratio=', bs(i)/yy(i), ', IBs=', IBs(i)
                             end if
-                        end if
-                    end do
-                    if (k > 5) write(6, *) '    ... and', k-5, 'more'
-                    ! Also print the current objective row
-                    write(6, *) '  Current objective row (first 8):', (gammaxs(ms+1, j), j=1, 2*(nvar+1))
+                        end do
 
-                    write(6, *) 'This indicates an unbounded or degenerate problem'
-                    
-                    ! Try to diagnose the issue
-                    write(6, *) 'Diagnostic info:'
-                    write(6, *) '  Number of positive yy:', count(yy(1:ms) > tol)
-                    write(6, *) '  Number of non-free vars:', count(.not. freevarrow(1:ms))
-                    write(6, *) '  Min yy:', minval(yy(1:ms)), 'Max yy:', maxval(yy(1:ms))
+                        ! Check for negative ratios
+                        write(6, *) '  Non-free vars with yy > pivot_tol but bs < 0 (infeasible):'
+                        k = 0
+                        do i = 1, ms
+                            if (.not. freevarrow(i) .and. yy(i) > pivot_tol .and. bs(i) < 0.0d0) then
+                                k = k + 1
+                                if (k <= 5) then
+                                    write(6, '(A,I3,A,F12.6,A,F12.6)') &
+                                        '    Row ', i, ': yy=', yy(i), ', bs=', bs(i)
+                                end if
+                            end if
+                        end do
+                        if (k > 5) write(6, *) '    ... and', k-5, 'more'
+                        write(6, *) '  Current objective row (first 8):', (gammaxs(ms+1, j), j=1, 2*(nvar+1))
+
+                        write(6, *) 'This indicates an unbounded or degenerate problem'
+                        write(6, *) 'Diagnostic info:'
+                        write(6, *) '  Number of positive yy:', count(yy(1:ms) > pivot_tol)
+                        write(6, *) '  Number of non-free vars:', count(.not. freevarrow(1:ms))
+                        write(6, *) '  Min yy:', minval(yy(1:ms)), 'Max yy:', maxval(yy(1:ms))
+                    end if
                     no_pivot_flag = .true.
                     unbounded_detected = .true.
                     exit
@@ -2239,72 +2279,26 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 ! Check if we actually found a valid pivot
                 if (k == 0) then
-                    write(6, *) 'ERROR: No leaving variable found (k=0) at eva_t=', eva_t, ', iter=', iter
-                    write(6, *) 'min_k=', min_k
-                    write(6, *) 'This means no feasible pivot exists'
+                    if (debug_active) then
+                        write(6, *) 'ERROR: No leaving variable found (k=0) at eva_t=', eva_t, ', iter=', iter
+                        write(6, *) 'min_k=', min_k
+                        write(6, *) 'This means no feasible pivot exists'
+                    end if
                     no_pivot_flag = .true.
                     unbounded_detected = .true.
                     exit
                 end if
 
 
-                ! Perform pivot
-
-                ! Replace the entire "Check for near-zero pivot before division" block with:
-                if (abs(yy(k)) < 1.0d-10) then
-                    write(6, *) 'WARNING: Near-zero pivot element at eva_t=', eva_t, ', iter=', iter
-                    write(6, *) 'Original pivot value:', yy(k), 'at position k=', k
-                    
-                    ! Instead of giving up, let's try to find a better pivot
-                    ! This is what R's solver does implicitly
-                    
-                    ! Initialize search for best alternative pivot
-                    best_pivot_value = 0.0d0
-                    best_k = 0
-                    
-                    ! Look through all possible pivot candidates
-                    do i = 1, ms
-                        ! Skip variables that must stay in the basis (freevarrow)
-                        if (.not. freevarrow(i)) then
-                            ! We need a non-zero element in the pivot column
-                            if (abs(yy(i)) > best_pivot_value) then
-                                ! But we also need to maintain feasibility
-                                ! Check if pivoting on this element keeps solution non-negative
-                                
-                                if (yy(i) > 1.0d-12) then
-                                    ! For positive pivot element
-                                    if (bs(i) >= -1.0d-10) then  ! bs(i) is essentially non-negative
-                                        ratio = bs(i) / yy(i)
-                                        if (ratio >= -1.0d-10) then  ! Would give non-negative result
-                                            best_pivot_value = abs(yy(i))
-                                            best_k = i
-                                        end if
-                                    end if
-                                else if (yy(i) < -1.0d-12) then
-                                    ! For negative pivot element
-                                    if (bs(i) <= 1.0d-10) then  ! bs(i) is essentially non-positive
-                                        ratio = bs(i) / yy(i)
-                                        if (ratio >= -1.0d-10) then  ! Would give non-negative result
-                                            best_pivot_value = abs(yy(i))
-                                            best_k = i
-                                        end if
-                                    end if
-                                end if
-                            end if
-                        end if
-                    end do
-                    
-                    ! Did we find a viable alternative?
-                    if (best_k > 0 .and. best_pivot_value > 1.0d-12) then
-                        write(6, *) 'Found alternative pivot with value:', best_pivot_value, 'at position:', best_k
-                        k = best_k  ! Use the alternative pivot
-                        ! Continue with the normal pivot operation
-                    else
-                        write(6, *) 'No viable pivot found - problem is truly degenerate'
+                ! Perform pivot only when the selected pivot is safely away from zero.
+                if (abs(yy(k)) <= pivot_tol) then
+                    if (debug_active) then
+                        write(6, *) 'WARNING: Near-zero pivot element at eva_t=', eva_t, ', iter=', iter
+                        write(6, *) 'Original pivot value:', yy(k), 'at position k=', k
                         write(6, *) 'Terminating simplex attempt without accepting candidate'
-                        no_pivot_flag = .true.
-                        exit
                     end if
+                    no_pivot_flag = .true.
+                    exit
                 end if
 
                 ee(1:ms+1) = yy(1:ms+1) / yy(k)
@@ -2372,21 +2366,24 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Log concerning patterns:
             if (iter > 10000) then
-                write(6, *) 'WARNING: Excessive iterations at eva_t=', eva_t
-                write(6, *) 'Iterations:', iter
-                write(6, *) 'Subsample size ms:', ms
-                write(6, *) 'Consider the following:'
-                write(6, *) '- The problem may be degenerate'
-                write(6, *) '- The tolerance may be too tight'
-                write(6, *) '- There may be cycling in the simplex'
+                if (debug_active) then
+                    write(6, *) 'WARNING: Excessive iterations at eva_t=', eva_t
+                    write(6, *) 'Iterations:', iter
+                    write(6, *) 'Subsample size ms:', ms
+                    write(6, *) 'Consider the following:'
+                    write(6, *) '- The problem may be degenerate'
+                    write(6, *) '- The tolerance may be too tight'
+                    write(6, *) '- There may be cycling in the simplex'
+                end if
             end if
             if (no_pivot_flag .or. (.not. simplex_converged)) then
-                write(6, *) 'WARNING: Reduced simplex did not converge at eva_t =', eva_t
+                if (debug_active) write(6, *) 'WARNING: Reduced simplex did not converge at eva_t =', eva_t
                 if (force_full_sample) then
                     call set_failure(2, eva_t)
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries .or. iter >= maxit) then
@@ -2399,20 +2396,47 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 estimate(i) = bs(i)
             end do
 
- 
-
-            ! Check signs of residuals using FULL sample
-            do i = 1, m
-                r(i) = y(i)
-                do j = 1, 2*(nvar+1)
-                    r(i) = r(i) - A(i, j) * estimate(j)
-                end do
+            ! Extract the final H from the converged reduced simplex basis.
+            do i = 1, 2*(nvar+1)
+                j = r1(i) - 2 - 2*nvar
+                if (j > 0 .and. j <= ms_org) then
+                    H_indices(i) = idx_not_jl_or_jh(j)
+                else
+                    H_indices(i) = 0
+                end if
             end do
 
+            refit_used = .false.
+            if (always_same_h_refit .and. tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
+                same_h_refit_attempted(eva_t) = 1
+                call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
+                                        estimate_refit, r_refit, same_h_ok)
+                if (same_h_ok) then
+                    do i = 1, 2*(nvar+1)
+                        estimate(i) = estimate_refit(i)
+                    end do
+                    do i = 1, m
+                        r(i) = r_refit(i)
+                    end do
+                    refit_used = .true.
+                end if
+            end if
+
+            ! Check signs of residuals using FULL sample. If same-H refit
+            ! failed or was not attempted, fall back to the tableau estimate.
+            if (.not. refit_used) then
+                do i = 1, m
+                    r(i) = y(i)
+                    do j = 1, 2*(nvar+1)
+                        r(i) = r(i) - A(i, j) * estimate(j)
+                    end do
+                end do
+            end if
 
 
 
-            ! Count bad signs using the raw full residual from a converged tableau.
+
+            ! Count bad signs using the full residual from the current candidate.
             bad_signs = 0
             n_sure_signs = n_sl + n_sh  ! Total sure-sign observations
 
@@ -2430,51 +2454,61 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Handle bad signs
             if (bad_signs > 0) then
-
-                if (bad_signs > int(0.1d0 * dble(ms))) then
-                    mmm_thresh = 2.0d0 * mmm_thresh
-                    not_new_sl_sh = .true.
-                else
-                    ! Fix bad signs ONLY when bad_signs <= 0.1*ms
-                    do i = 1, m
-                        if ((r(i) < 0.0d0) .and. sh(i)) then
-                            sh(i) = .false.
-                        end if
-                        if ((r(i) > 0.0d0) .and. sl(i)) then
-                            sl(i) = .false.
-                        end if
-                    end do
-                    not_new_sl_sh = .false.
-
-
-
-
-
-
-
-                end if
+                call handle_current_bad_signs()
 
             else
                 ! No bad signs - we've reached optimality
-                do i = 1, 2*(nvar+1)
-                    j = r1(i) - 2 - 2*nvar
-                    if (j > 0 .and. j <= ms_org) then
-                        H_indices(i) = idx_not_jl_or_jh(j)
-                    else
-                        H_indices(i) = 0
-                    end if
-                end do
                 accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, 2*(nvar+1), res_tol)
+                if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
+                    if (tvcqr_H_basis_valid(H_indices, A, m, 2*(nvar+1))) then
+                        same_h_refit_attempted(eva_t) = 1
+                        call same_h_refit_tvcqr(H_indices, A, y, m, 2*(nvar+1), res_tol, &
+                                                estimate_refit, r_refit, same_h_ok)
+                        if (same_h_ok) then
+                            do i = 1, 2*(nvar+1)
+                                estimate(i) = estimate_refit(i)
+                            end do
+                            do i = 1, m
+                                r(i) = r_refit(i)
+                            end do
+                            refit_used = .true.
+                            bad_signs = 0
+                            do i = 1, m
+                                if ((r(i) < 0.0d0) .and. sh(i)) then
+                                    bad_signs = bad_signs + 1
+                                end if
+                                if ((r(i) > 0.0d0) .and. sl(i)) then
+                                    bad_signs = bad_signs + 1
+                                end if
+                            end do
+                            if (bad_signs == 0) then
+                                accept_subsample = certify_tvcqr_candidate(H_indices, r, A, m, &
+                                                                           2*(nvar+1), res_tol)
+                            end if
+                        end if
+                    end if
+                end if
+                if (bad_signs > 0) then
+                    call handle_current_bad_signs()
+                    cycle
+                end if
                 if (.not. accept_subsample) then
                     if ((.not. any(sl)) .and. (.not. any(sh)) .and. (ms >= m)) then
                         call set_failure(1, eva_t)
                         return
                     end if
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     cycle
                 end if
                 not_optimal = .false.
+                if (refit_used) then
+                    same_h_refit_recovered(eva_t) = 1
+                end if
+                do i = 1, 2*(nvar+1)
+                    bs(i) = estimate(i)
+                end do
                 do i = 1, 2*(nvar+1)
                     r(H_indices(i)) = 0.0d0
                 end do
@@ -2491,8 +2525,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     else
                         ! This matches R's behavior - r1 should always give valid indices
                         ! If not, there's a bug in the simplex algorithm
-                        write(6, *) 'ERROR: Invalid certified H index at eva_t=', eva_t, ', i=', i
-                        write(6, *) 'r1(i)=', r1(i), ', ms_org=', ms_org
+                        if (debug_active) then
+                            write(6, *) 'ERROR: Invalid certified H index at eva_t=', eva_t, ', i=', i
+                            write(6, *) 'r1(i)=', r1(i), ', ms_org=', ms_org
+                        end if
                         call set_failure(3, eva_t)
                         return
                     end if
@@ -2557,20 +2593,36 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
                                 id_gammaxs_Hbar(i) = IBs(idx) - 2*(nvar+1) - ms
+                                if (id_gammaxs_Hbar(i) < 1 .or. id_gammaxs_Hbar(i) > ms_org) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 idx_Hbar_neg(n_Hbar_neg) = idx_not_jl_or_jh(id_gammaxs_Hbar(i))
+                                if (idx_Hbar_neg(n_Hbar_neg) < 1 .or. idx_Hbar_neg(n_Hbar_neg) > m) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 do j = 1, 2*(nvar+1)
                                     gammaxs_neg(n_Hbar_neg, j) = gammaxs(idx, j)
                                 end do
-                                bs_neg(n_Hbar_neg) = bs(idx)
+                                bs_neg(n_Hbar_neg) = max(-r(idx_Hbar_neg(n_Hbar_neg)), 0.0d0)
                             else
                                 ! This is a u variable
                                 n_Hbar_pos = n_Hbar_pos + 1
                                 id_gammaxs_Hbar(i) = IBs(idx) - 2*(nvar+1)
+                                if (id_gammaxs_Hbar(i) < 1 .or. id_gammaxs_Hbar(i) > ms_org) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 idx_Hbar_pos(n_Hbar_pos) = idx_not_jl_or_jh(id_gammaxs_Hbar(i))
+                                if (idx_Hbar_pos(n_Hbar_pos) < 1 .or. idx_Hbar_pos(n_Hbar_pos) > m) then
+                                    call set_failure(5, eva_t)
+                                    return
+                                end if
                                 do j = 1, 2*(nvar+1)
                                     gammaxs_pos(n_Hbar_pos, j) = gammaxs(idx, j)
                                 end do
-                                bs_pos(n_Hbar_pos) = bs(idx)
+                                bs_pos(n_Hbar_pos) = max(r(idx_Hbar_pos(n_Hbar_pos)), 0.0d0)
                             end if
                         end do
 
@@ -2587,13 +2639,16 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         
         ! Store results for this time point
         it_num(eva_t) = iter
-        n_sub(eva_t) = ms
+        final_n_sub(eva_t) = ms
         M_out = M_threshold
         
 
         ! Compute theta_ll_est for current eva_t
         do j = 1, nvar+1
             theta_ll_est(eva_t, j) = estimate(j) + (dble(eva_t)/dble(m)) * estimate(nvar+1+j)
+        end do
+        do j = 1, 2*(nvar+1)
+            beta_full_est(eva_t, j) = estimate(j)
         end do
 
         ! DEBUG: Show estimates at problem times
@@ -2614,7 +2669,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         do i = 1, m
             r_prev(i) = r(i)
             if (store_residual) then
-                residual_est(eva_t, i) = r(i)
+                residual_est((i - 1) * m + eva_t) = r(i)
             end if
         end do
 
@@ -2631,6 +2686,35 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     deallocate(bs)
 
 contains
+
+    subroutine record_repair()
+        implicit none
+
+        if (eva_t >= 1 .and. eva_t <= m) then
+            repair_count(eva_t) = repair_count(eva_t) + 1
+        end if
+    end subroutine record_repair
+
+    subroutine handle_current_bad_signs()
+        implicit none
+        integer :: bi
+
+        call record_repair()
+        if (bad_signs > int(0.1d0 * dble(ms))) then
+            mmm_thresh = 2.0d0 * mmm_thresh
+            not_new_sl_sh = .true.
+        else
+            do bi = 1, m
+                if ((r(bi) < 0.0d0) .and. sh(bi)) then
+                    sh(bi) = .false.
+                end if
+                if ((r(bi) > 0.0d0) .and. sl(bi)) then
+                    sl(bi) = .false.
+                end if
+            end do
+            not_new_sl_sh = .false.
+        end if
+    end subroutine handle_current_bad_signs
 
     subroutine set_failure(code, eval_idx)
         implicit none
@@ -2684,6 +2768,87 @@ contains
         end if
     end function certify_tvcqr_candidate
 
+    logical function tvcqr_H_basis_valid(H_idx, A_mat, m_loc, p)
+        implicit none
+        integer, intent(in) :: m_loc, p
+        integer, intent(in) :: H_idx(p)
+        double precision, intent(in) :: A_mat(m_loc, p)
+        integer :: i, j, ierr_local
+        double precision :: AH(p, p), AH_inv(p, p)
+
+        tvcqr_H_basis_valid = .true.
+
+        do i = 1, p
+            if (H_idx(i) < 1 .or. H_idx(i) > m_loc) then
+                tvcqr_H_basis_valid = .false.
+                return
+            end if
+            do j = i + 1, p
+                if (H_idx(i) == H_idx(j)) then
+                    tvcqr_H_basis_valid = .false.
+                    return
+                end if
+            end do
+        end do
+
+        do i = 1, p
+            do j = 1, p
+                AH(i, j) = A_mat(H_idx(i), j)
+            end do
+        end do
+        call matrix_inverse_2p(AH, AH_inv, p, ierr_local)
+        if (ierr_local /= 0) then
+            tvcqr_H_basis_valid = .false.
+        end if
+    end function tvcqr_H_basis_valid
+
+    subroutine same_h_refit_tvcqr(H_idx, A_mat, y_vec, m_loc, p, res_tol_loc, &
+                                  estimate_out, r_out, recovered)
+        implicit none
+        integer, intent(in) :: m_loc, p
+        integer, intent(in) :: H_idx(p)
+        double precision, intent(in) :: A_mat(m_loc, p), y_vec(m_loc), res_tol_loc
+        double precision, intent(out) :: estimate_out(p), r_out(m_loc)
+        logical, intent(out) :: recovered
+        integer :: i, j, ierr_local
+        double precision :: AH(p, p), AH_inv(p, p), yH(p)
+
+        recovered = .false.
+        estimate_out = 0.0d0
+        r_out = 0.0d0
+
+        if (.not. tvcqr_H_basis_valid(H_idx, A_mat, m_loc, p)) then
+            return
+        end if
+
+        do i = 1, p
+            yH(i) = y_vec(H_idx(i))
+            do j = 1, p
+                AH(i, j) = A_mat(H_idx(i), j)
+            end do
+        end do
+        call matrix_inverse_2p(AH, AH_inv, p, ierr_local)
+        if (ierr_local /= 0) then
+            return
+        end if
+
+        do i = 1, p
+            estimate_out(i) = 0.0d0
+            do j = 1, p
+                estimate_out(i) = estimate_out(i) + AH_inv(i, j) * yH(j)
+            end do
+        end do
+
+        do i = 1, m_loc
+            r_out(i) = y_vec(i)
+            do j = 1, p
+                r_out(i) = r_out(i) - A_mat(i, j) * estimate_out(j)
+            end do
+        end do
+
+        recovered = certify_tvcqr_candidate(H_idx, r_out, A_mat, m_loc, p, res_tol_loc)
+    end subroutine same_h_refit_tvcqr
+
     ! Helper subroutine to save algorithm state
     subroutine save_checkpoint(eva_t, filename_prefix)
         integer, intent(in) :: eva_t
@@ -2707,15 +2872,21 @@ contains
         write(unit_num, '(A,I4)') '# Residual summary at eva_t = ', eva_t
         do i = 1, eva_t
 
-            res_min = minval(residual_est(i, 1:m))
-            res_max = maxval(residual_est(i, 1:m))
-            res_mean = sum(residual_est(i, 1:m)) / dble(m)
+            res_min = residual_est(i)
+            res_max = residual_est(i)
+            res_mean = 0.0d0
+            do j = 1, m
+                res_min = min(res_min, residual_est((j - 1) * m + i))
+                res_max = max(res_max, residual_est((j - 1) * m + i))
+                res_mean = res_mean + residual_est((j - 1) * m + i)
+            end do
+            res_mean = res_mean / dble(m)
             write(unit_num, '(I5,3F12.6,2I8)') i, res_min, res_max, res_mean, &
-                it_num(i), n_sub(i)
+                it_num(i), final_n_sub(i)
         end do
         close(unit_num)
         
-        write(6, '(A,A)') 'Checkpoint saved with prefix: ', trim(filename_prefix)
+        if (debug_active) write(6, '(A,A)') 'Checkpoint saved with prefix: ', trim(filename_prefix)
     end subroutine save_checkpoint
 
     ! Helper function to create comma-separated list of indices where logical array is true

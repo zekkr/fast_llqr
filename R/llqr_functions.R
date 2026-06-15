@@ -1768,7 +1768,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                                       debug_trace = FALSE,
                                       debug_rounds = NULL,
                                       min_subsample_size = NULL,
-                                      store_residual = FALSE) {
+                                      store_residual = FALSE,
+                                      always_same_h_refit = TRUE) {
   ensure_llqr_fortran_library_loaded("llqr_ppro.so")
   case <- llqr_validate_case(case)
   h.factor <- llqr_validate_h_factor(h.factor)
@@ -1878,9 +1879,12 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      it_num = integer(rounds),
                      residual_est = matrix(0.0, nrow = rounds, ncol = m),
                      H_mat = matrix(0L, nrow = rounds, ncol = nvar + 1),
-                     n_sub_out = integer(rounds),
+                     first_n_sub = integer(rounds),
+                     repair_count = integer(rounds),
+                     final_n_sub = integer(rounds),
                      ierr = integer(1),
-                     failed_eval = integer(1))
+                     failed_eval = integer(1),
+                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)))
 
   raw_backend <- list(
     ll_est = as.numeric(result$ll_est),
@@ -1889,14 +1893,18 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     residual_est = result$residual_est,
     H_seq = matrix(result$H_mat, nrow = rounds, ncol = nvar + 1),
     M = NA_real_,
-    n_sub = as.integer(result$n_sub_out),
+    first_n_sub = as.integer(result$first_n_sub),
+    repair_count = as.integer(result$repair_count),
+    final_n_sub = as.integer(result$final_n_sub),
+    n_sub = as.integer(result$final_n_sub),
     z = z,
     ierr = as.integer(result$ierr),
     failed_eval = as.integer(result$failed_eval)
   )
 
   make_return <- function(ll_est_value, d_ll_est_value, it_num_value, residual_est_value,
-                          H_seq_value, n_sub_value, returned_backend,
+                          H_seq_value, first_n_sub_value, repair_count_value,
+                          final_n_sub_value, returned_backend,
                           first_failed_eval = NA_integer_, failure_reason = NULL,
                           failure_info = NULL, fallback_triggered = FALSE,
                           fallback_reason = NULL) {
@@ -1916,7 +1924,10 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       H_seq = H_seq_value,
       h = h,
       M = NA_real_,
-      n_sub = n_sub_value,
+      first_n_sub = as.integer(first_n_sub_value),
+      repair_count = as.integer(repair_count_value),
+      final_n_sub = as.integer(final_n_sub_value),
+      n_sub = as.integer(final_n_sub_value),
       acceptance_diagnostics = acceptance_diagnostics,
       certification_log = certification_log,
       round_debug = round_debug,
@@ -1939,14 +1950,18 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     it_num_failed <- raw_backend$it_num
     residual_failed <- raw_backend$residual_est
     H_failed <- raw_backend$H_seq
-    n_sub_failed <- raw_backend$n_sub
+    first_n_sub_failed <- raw_backend$first_n_sub
+    repair_count_failed <- raw_backend$repair_count
+    final_n_sub_failed <- raw_backend$final_n_sub
     idx <- rd_start:rounds
     ll_est_failed[idx] <- NA_real_
     d_ll_est_failed[idx] <- NA_real_
     it_num_failed[idx] <- NA_integer_
     residual_failed[idx, ] <- NA_real_
     H_failed[idx, ] <- NA_integer_
-    n_sub_failed[idx] <- NA_integer_
+    first_n_sub_failed[idx] <- NA_integer_
+    repair_count_failed[idx] <- NA_integer_
+    final_n_sub_failed[idx] <- NA_integer_
     if (is.null(acceptance_diagnostics[[rd_start]])) {
       acceptance_diagnostics[[rd_start]] <<- list(
         round = as.integer(rd_start),
@@ -1965,7 +1980,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       it_num_value = it_num_failed,
       residual_est_value = residual_failed,
       H_seq_value = H_failed,
-      n_sub_value = n_sub_failed,
+      first_n_sub_value = first_n_sub_failed,
+      repair_count_value = repair_count_failed,
+      final_n_sub_value = final_n_sub_failed,
       returned_backend = "ppro_failed",
       first_failed_eval = as.integer(rd_start),
       failure_reason = reason,
@@ -1994,7 +2011,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       it_num_value = fallback_fit$it_num,
       residual_est_value = fallback_fit$residual_est,
       H_seq_value = fallback_fit$H_seq,
-      n_sub_value = rep.int(m, rounds),
+      first_n_sub_value = rep.int(m, rounds),
+      repair_count_value = rep.int(NA_integer_, rounds),
+      final_n_sub_value = rep.int(m, rounds),
       returned_backend = "seq_fallback",
       first_failed_eval = as.integer(rd_start),
       failure_reason = failure_reason_arg,
@@ -2051,7 +2070,10 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
   d_ll_est_raw <- raw_backend$d_ll_est
   H_seq_raw <- raw_backend$H_seq
   residual_est_raw <- raw_backend$residual_est
-  n_sub <- raw_backend$n_sub
+  first_n_sub <- raw_backend$first_n_sub
+  repair_count <- raw_backend$repair_count
+  final_n_sub <- raw_backend$final_n_sub
+  n_sub <- raw_backend$final_n_sub
   A <- cbind(1, x)
 
   for (rd in seq_len(rounds)) {
@@ -2134,7 +2156,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     it_num_value = raw_backend$it_num,
     residual_est_value = residual_est_raw,
     H_seq_value = H_seq_raw,
-    n_sub_value = n_sub,
+    first_n_sub_value = first_n_sub,
+    repair_count_value = repair_count,
+    final_n_sub_value = final_n_sub,
     returned_backend = "ppro"
   )
 }

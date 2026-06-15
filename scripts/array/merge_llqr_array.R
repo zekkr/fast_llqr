@@ -30,6 +30,19 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+as_optional_pos_int <- function(x) {
+  raw <- trimws(Sys.getenv(x, unset = NA_character_))
+  if (is.na(raw) || nchar(raw) == 0 ||
+      tolower(raw) %in% c("null", "na", "default")) {
+    return(NULL)
+  }
+  value <- suppressWarnings(as.numeric(raw))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) ||
+      value < 1L || value != floor(value)) {
+    stop(sprintf("%s must be empty/default or a positive integer, got: %s", x, raw))
+  }
+  as.integer(value)
+}
 
 case     <- as_int("FASTQR_CASE", 1)
 tau      <- as_num("FASTQR_TAU", 0.5)
@@ -45,6 +58,7 @@ track_order <- as_bool("FASTQR_TRACK_ORDER", TRUE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
+min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 
 config <- list(
   case = case,
@@ -59,7 +73,8 @@ config <- list(
   bland = bland,
   track_order = track_order,
   Mm.factor = Mm.factor,
-  seed_base = seed_base
+  seed_base = seed_base,
+  min_subsample_size = min_subsample_size
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
@@ -69,7 +84,8 @@ dir.create("data/llqr_simu_results", recursive = TRUE, showWarnings = FALSE)
 
 cat("=== LLQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
-cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n\n", case, tau, n, num_rep))
+cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
+cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n\n")
 
 methods <- create_llqr_methods(Mm.factor)
 method_names <- names(methods)
@@ -80,8 +96,10 @@ timing_matrix <- matrix(NA_real_, nrow = num_rep, ncol = num_methods,
 
 estimates_list <- setNames(vector("list", num_methods), method_names)
 H_seq_list     <- if (include_h_seq) setNames(vector("list", num_methods), method_names) else NULL
+method_metadata <- setNames(vector("list", num_methods), method_names)
 for (m in method_names) {
   estimates_list[[m]] <- vector("list", num_rep)
+  method_metadata[[m]] <- vector("list", num_rep)
   if (include_h_seq) {
     H_seq_list[[m]] <- vector("list", num_rep)
   }
@@ -116,6 +134,7 @@ for (rep_id in 1:num_rep) {
   timing_matrix[rep_id, ] <- pr$timing_matrix[1, method_names]
   for (m in method_names) {
     estimates_list[[m]][[rep_id]] <- pr$estimates_list[[m]][[1]]
+    method_metadata[[m]][rep_id] <- list(if (!is.null(pr$method_metadata)) pr$method_metadata[[m]] else NULL)
     if (include_h_seq) {
       H_seq_list[[m]][[rep_id]] <- if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL
     }
@@ -126,6 +145,8 @@ results <- list(
   config = config,
   timing_matrix = timing_matrix,
   estimates_list = estimates_list,
+  method_metadata = method_metadata,
+  method_metadata_list = method_metadata,
   method_names = method_names,
   Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, Mm.factor),
   timestamp = Sys.time(),
