@@ -20,6 +20,20 @@ tvcqr_sim_bool <- function(value, default, name) {
   stop(sprintf("config$%s must be a boolean scalar.", name))
 }
 
+tvcqr_sim_threshold_scale_mode <- function(value, default = "loglog") {
+  if (is.null(value)) {
+    return(default)
+  }
+  if (!is.character(value) || length(value) != 1L || is.na(value)) {
+    stop("config$threshold_scale_mode must be one of 'loglog' or 'log'.")
+  }
+  value <- tolower(trimws(value))
+  if (!(value %in% c("loglog", "log"))) {
+    stop("config$threshold_scale_mode must be one of 'loglog' or 'log'.")
+  }
+  value
+}
+
 complete_tvcqr_sim_config <- function(config) {
   case_info <- resolve_tvcqr_case(config$case)
   config$case <- case_info$case_id
@@ -34,6 +48,24 @@ complete_tvcqr_sim_config <- function(config) {
     default = TRUE,
     name = "always_same_h_refit"
   )
+  config$threshold_lower_bound <- tvcqr_sim_bool(
+    config$threshold_lower_bound,
+    default = TRUE,
+    name = "threshold_lower_bound"
+  )
+  config$threshold_scale_mode <- tvcqr_sim_threshold_scale_mode(
+    config$threshold_scale_mode,
+    default = "loglog"
+  )
+  if (!config$threshold_lower_bound && !is.null(config$Mm.factor)) {
+    mm_factor_numeric <- as.numeric(config$Mm.factor)
+    if (length(mm_factor_numeric) == 0L ||
+        any(is.na(mm_factor_numeric)) ||
+        any(!is.finite(mm_factor_numeric)) ||
+        any(mm_factor_numeric <= 0)) {
+      stop("config$Mm.factor must contain only positive finite values when threshold_lower_bound is FALSE.")
+    }
+  }
   if (is.null(config$min_subsample_size)) {
     config$min_subsample_size <- NULL
   } else {
@@ -154,6 +186,12 @@ create_tvcqr_methods <- function(Mm.factor_vec) {
           }
           if ("always_same_h_refit" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
             call_args$always_same_h_refit <- config$always_same_h_refit
+          }
+          if ("threshold_lower_bound" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$threshold_lower_bound <- config$threshold_lower_bound
+          }
+          if ("threshold_scale_mode" %in% names(formals(tvcqr_seq_ppro_fortran_wrapper))) {
+            call_args$threshold_scale_mode <- config$threshold_scale_mode
           }
           do.call(tvcqr_seq_ppro_fortran_wrapper, call_args)
         }
@@ -333,6 +371,8 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
       h_factor = as.numeric(first_or(config$h.factor, NA_real_)),
       min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
       always_same_h_refit = isTRUE(config$always_same_h_refit),
+      threshold_lower_bound = isTRUE(config$threshold_lower_bound),
+      threshold_scale_mode = as.character(first_or(config$threshold_scale_mode, NA_character_)),
       returned_backend = returned_backend,
       fallback_triggered = fallback_triggered,
       fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),

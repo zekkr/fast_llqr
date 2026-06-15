@@ -57,9 +57,11 @@ For LLQR, `q = nvar + 1`, `A = cbind(1, x)`, the evaluation index is `rd`, and t
 
 The first evaluation point is solved on the full sample. After convergence, the solver stores the original observation indices of the zero-residual/interpolating rows in `H_seq`: LLQR uses `H <- r1 - 1 - nvar`, and TVCQR uses `H <- r1 - 2 - 2 * nvar`.
 
-For every later evaluation point, including LLQR `rd == 2`, the solver starts from the screened subsample. It uses `r_prev` to build `M`, `sl <- r < -M`, `sh <- r > M`, and `not_jl_or_jh <- !(sl | sh)`. Previous basis rows are forced back into the retained subsample before aggregate rows are built. In code, `H <- match(H_seq[previous, ], idx_not_jl_or_jh)` maps original `H_seq` indices into current subsample row positions.
+For every later evaluation point, including LLQR `rd == 2`, the solver starts from the screened subsample. It uses `r_prev` and the current active set `w > 0` to build `M`, `sl <- active & r < -M`, `sh <- active & r > M`, and `not_jl_or_jh <- active & !(sl | sh)`. Previous basis rows are forced back into the retained subsample before aggregate rows are built. In code, `H <- match(H_seq[previous, ], idx_not_jl_or_jh)` maps original `H_seq` indices into current subsample row positions.
 
 Low aggregate rows from `sl` are built from `glob.wx = colSums(A[sl, ] * w[sl])` and `glob.wy = sum(y[sl] * w[sl])`. High aggregate rows from `sh` are built from `ghib.wx = colSums(A[sh, ] * w[sh])` and `ghib.wy = sum(y[sh] * w[sh])`. Aggregate rows append `ws <- c(ws, 1)` because the original kernel weights have already been folded into aggregate `A` and `y`.
+
+For bounded-kernel evaluation points, threshold expansion counts only active near-boundary rows. Inactive non-H rows are not retained, aggregated, or repaired. Previous H observations are still forced into the retained tableau even when their current weight is zero; these rows are zero-cost basis padding for initialization, not active screened subsample rows. `first_n_sub` and `final_n_sub` report the actual reduced tableau row count: active screened rows plus forced previous-H padding plus aggregate rows.
 
 Inside the reduced problem, `idpos <- which(r[not_jl_or_jh] > 0)` identifies individual positive residual rows and `idneg <- which(r[not_jl_or_jh] < 0)` identifies individual negative residual rows. Current `H` rows are removed from `idpos` and `idneg`. Positive rows use `u` basis variables, negative rows use `v` basis variables, and the nonbasic residual pairs for the `H` rows are `r1 <- H + q` and `r2 <- r1 + ms`.
 

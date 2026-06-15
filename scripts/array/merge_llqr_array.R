@@ -24,6 +24,14 @@ as_bool <- function(x, default = FALSE) {
   if (is.na(x) || nchar(x) == 0) return(default)
   tolower(x) %in% c("1","true","t","yes","y")
 }
+as_threshold_scale_mode <- function(x, default = "loglog") {
+  value <- tolower(trimws(Sys.getenv(x, unset = default)))
+  if (is.na(value) || nchar(value) == 0) return(default)
+  if (!(value %in% c("loglog", "log"))) {
+    stop(sprintf("%s must be loglog or log, got: %s", x, value))
+  }
+  value
+}
 as_num_vec <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
   if (is.na(x) || nchar(x) == 0) return(default)
@@ -59,6 +67,14 @@ seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
 min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
+threshold_scale_mode <- as_threshold_scale_mode("FASTQR_THRESHOLD_SCALE_MODE", "loglog")
+if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
+  stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
+}
+if (!threshold_lower_bound && any(!is.finite(Mm.factor) | Mm.factor <= 0)) {
+  stop("FASTQR_MM_FACTOR must contain only positive finite values when FASTQR_THRESHOLD_LOWER_BOUND is false.")
+}
 
 config <- list(
   case = case,
@@ -74,7 +90,9 @@ config <- list(
   track_order = track_order,
   Mm.factor = Mm.factor,
   seed_base = seed_base,
-  min_subsample_size = min_subsample_size
+  min_subsample_size = min_subsample_size,
+  threshold_lower_bound = threshold_lower_bound,
+  threshold_scale_mode = threshold_scale_mode
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
@@ -85,7 +103,9 @@ dir.create("data/llqr_simu_results", recursive = TRUE, showWarnings = FALSE)
 cat("=== LLQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
-cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n\n")
+cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n")
+cat("threshold_lower_bound:", threshold_lower_bound, "\n")
+cat("threshold_scale_mode:", threshold_scale_mode, "\n\n")
 
 methods <- create_llqr_methods(Mm.factor)
 method_names <- names(methods)

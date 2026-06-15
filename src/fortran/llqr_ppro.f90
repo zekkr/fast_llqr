@@ -123,13 +123,15 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                              Mm_factor, case_int, bland_int, min_subsample_size_in, &
                              ll_est, d_ll_est, it_num, residual_est, H_mat, first_n_sub_out, &
                              repair_count_out, final_n_sub_out, &
-                             ierr, failed_eval, always_same_h_refit_int)
+                             ierr, failed_eval, always_same_h_refit_int, &
+                             threshold_lower_bound_int, threshold_scale_mode_int)
 
     implicit none
 
     ! Input arguments
     integer, intent(in) :: m, nvar, rounds, maxit, case_int, bland_int
     integer, intent(in) :: min_subsample_size_in, always_same_h_refit_int
+    integer, intent(in) :: threshold_lower_bound_int, threshold_scale_mode_int
     double precision, intent(in) :: x(m), y(m), z(rounds), tau, tol, Mm_factor
     double precision, intent(inout) :: h
 
@@ -163,11 +165,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: iter_total, iter_attempt, remaining
     integer :: idx_r1_minus_offset
     double precision :: rrl, min_k, pi, pivot_row_value
-    logical :: bland, always_same_h_refit
+    logical :: bland, always_same_h_refit, threshold_lower_bound
 
     ! PPRO-specific variables
-    double precision :: mm, mmm, M_threshold, residual_scale
-    logical :: sl(m), sh(m), not_jl_or_jh(m)
+    double precision :: mm, mmm, M_threshold, residual_scale, threshold_scale
+    logical :: sl(m), sh(m), not_jl_or_jh(m), active(m)
+    logical :: has_sl_agg, has_sh_agg
     integer :: ms  ! subsample size
     integer :: H_prev(nvar+1)
     integer :: n_bad_signs
@@ -192,7 +195,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: idx_not_jl_or_jh(m)
     integer :: n_subsample, n_potential_S
     integer :: min_subsample_size, min_subsample_size_effective
+    integer :: n_active, target_min
     double precision :: r(m), r_raw(m)
+    double precision :: sum_w_sl, sum_w_sh
     double precision :: ll_candidate, d_ll_candidate
     integer :: H_candidate(nvar+1)
     integer :: h_failure_code
@@ -260,6 +265,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     pi = 4.0d0 * atan(1.0d0)
     bland = (bland_int /= 0)
     always_same_h_refit = (always_same_h_refit_int /= 0)
+    threshold_lower_bound = (threshold_lower_bound_int /= 0)
     res_tol = 1.0d-6
     max_empty_pivot_retries = 3
     ierr = 0
@@ -270,6 +276,21 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     first_n_sub_sorted = 0
     repair_count_sorted = 0
     final_n_sub_sorted = 0
+
+    if (threshold_scale_mode_int == 1) then
+        threshold_scale = log(log(dble(m)))
+    else if (threshold_scale_mode_int == 2) then
+        threshold_scale = log(dble(m))
+    else
+        ierr = 5
+        failed_eval = 1
+        return
+    end if
+    if ((.not. threshold_lower_bound) .and. Mm_factor <= 0.0d0) then
+        ierr = 5
+        failed_eval = 1
+        return
+    end if
 
     if (min_subsample_size_in > 0) then
         min_subsample_size_effective = min_subsample_size_in
@@ -449,9 +470,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         repair_count_sorted(rd) = 0
 
         ! Compute kernel weights for current z (USING SORTED Z!)
+        n_active = 0
         do i = 1, m
             eva_z(i) = z_sorted(rd) - x(i)
             w(i) = llqr_kernel_weight(eva_z(i) / h, case_int, pi)
+            active(i) = (w(i) > 0.0d0)
+            if (active(i)) n_active = n_active + 1
         end do
 
         ! BAD SIGNS OUTER LOOP: Keep trying until solution is good
@@ -464,22 +488,37 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             H_prev = H_mat_sorted(rd-1, :)
             if (not_new_sl_sh) then
                 residual_scale = median_abs(r, m)
-                M_threshold = max(Mm_factor * mmm * log(log(dble(m))), 0.1d0 * residual_scale)
+                if (threshold_lower_bound) then
+                    M_threshold = max(Mm_factor * mmm * threshold_scale, 0.1d0 * residual_scale)
+                else
+                    M_threshold = Mm_factor * mmm * threshold_scale
+                end if
 
                 min_subsample_size = min_subsample_size_effective
 
-                ! OPTIMIZATION: Compute max_r once instead of in loop
-                min_k = maxval(abs(r))
-                n_subsample = count(abs(r) <= M_threshold)
-                do while (n_subsample < min_subsample_size .and. M_threshold < min_k)
+                target_min = min(min_subsample_size, n_active)
+                min_k = 0.0d0
+                n_potential_S = 0
+                do i = 1, m
+                    if (active(i)) then
+                        if (abs(r(i)) > min_k) min_k = abs(r(i))
+                        if (abs(r(i)) <= M_threshold) n_potential_S = n_potential_S + 1
+                    end if
+                end do
+                do while (n_potential_S < target_min .and. M_threshold < min_k)
                     M_threshold = M_threshold * 1.5d0
-                    n_subsample = count(abs(r) <= M_threshold)
+                    n_potential_S = 0
+                    do i = 1, m
+                        if (active(i) .and. abs(r(i)) <= M_threshold) then
+                            n_potential_S = n_potential_S + 1
+                        end if
+                    end do
                 end do
 
                 ! Classify observations
                 do i = 1, m
-                    sl(i) = r(i) < -M_threshold
-                    sh(i) = r(i) > M_threshold
+                    sl(i) = active(i) .and. r(i) < -M_threshold
+                    sh(i) = active(i) .and. r(i) > M_threshold
                 end do
             end if
 
@@ -488,23 +527,35 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             if (force_full_sample) then
                 sl = .false.
                 sh = .false.
-                not_jl_or_jh = .true.
+                not_jl_or_jh = active
             else
                 do i = 1, m
-                    not_jl_or_jh(i) = .not. (sl(i) .or. sh(i))
-                end do
-                do i = 1, nvar+1
-                    if (H_prev(i) < 1 .or. H_prev(i) > m) then
-                        call set_failure(3)
-                        return
-                    end if
-                    if (sl(H_prev(i)) .or. sh(H_prev(i))) then
-                        sl(H_prev(i)) = .false.
-                        sh(H_prev(i)) = .false.
-                        not_jl_or_jh(H_prev(i)) = .true.
-                    end if
+                    not_jl_or_jh(i) = active(i) .and. (.not. (sl(i) .or. sh(i)))
                 end do
             end if
+
+            ! Previous-H rows are zero-cost basis padding when their current
+            ! kernel weight is zero; keep them out of active screening counts.
+            do i = 1, nvar+1
+                if (H_prev(i) < 1 .or. H_prev(i) > m) then
+                    call set_failure(3)
+                    return
+                end if
+                if (sl(H_prev(i)) .or. sh(H_prev(i))) then
+                    sl(H_prev(i)) = .false.
+                    sh(H_prev(i)) = .false.
+                end if
+                not_jl_or_jh(H_prev(i)) = .true.
+            end do
+
+            sum_w_sl = 0.0d0
+            sum_w_sh = 0.0d0
+            do i = 1, m
+                if (sl(i)) sum_w_sl = sum_w_sl + w(i)
+                if (sh(i)) sum_w_sh = sum_w_sh + w(i)
+            end do
+            has_sl_agg = (sum_w_sl > 0.0d0)
+            has_sh_agg = (sum_w_sh > 0.0d0)
 
         ! Count subsample size
         ms = count(not_jl_or_jh)
@@ -549,7 +600,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Store at index m+1 to match R's storage at n+1
             ! R: glob.wx <- colSums(gammaxsl * wsl) where wsl = w[sl]
             ! R: glob.wy <- sum(y[sl] * wsl)
-            if (any(sl)) then
+            if (has_sl_agg) then
                 do j = 1, nvar+1
                     gammaxs_temp(m+1, j) = 0.0d0
                     do i = 1, m
@@ -573,7 +624,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Store at index m+2 to match R's storage at n+2
             ! R: glob.wx <- colSums(gammaxsh * wsh) where wsh = w[sh]
             ! R: glob.wy <- sum(y[sh] * wsh)
-            if (any(sh)) then
+            if (has_sh_agg) then
                 do j = 1, nvar+1
                     gammaxs_temp(m+2, j) = 0.0d0
                     do i = 1, m
@@ -673,16 +724,16 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Aggregates are stored at m+1 (sl) and m+2 (sh) in gammaxs_temp
             ! The Fortran code accesses gammaxs_temp(Hbar(i), :) and stores result in gammaxs(nvar+1+i, :)
             ! So Hbar should contain temp array indices, not final tableau indices
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 ! Both sl and sh exist
                 Hbar(n_hbar + 1) = m + 1  ! sl aggregate in temp
                 Hbar(n_hbar + 2) = m + 2  ! sh aggregate in temp
                 n_hbar = n_hbar + 2
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 ! Only sl exists
                 Hbar(n_hbar + 1) = m + 1  ! sl aggregate in temp
                 n_hbar = n_hbar + 1
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 ! Only sh exists
                 Hbar(n_hbar + 1) = m + 2  ! sh aggregate in temp
                 n_hbar = n_hbar + 1
@@ -697,12 +748,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             end do
 
             ! Add P values for aggregates
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 P(n_idpos + n_idneg + 1) = -1.0d0  ! sl aggregate gets -1
                 P(n_idpos + n_idneg + 2) = 1.0d0   ! sh aggregate gets +1
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 P(n_idpos + n_idneg + 1) = -1.0d0  ! sl aggregate gets -1
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 P(n_idpos + n_idneg + 1) = 1.0d0   ! sh aggregate gets +1
             end if
 
@@ -756,13 +807,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             end do
             ! Next: Add aggregate variable indices if they exist
             ! R code: if both sl and sh exist, add nvar+1+2*ms-1 (v_L for sl) and nvar+1+ms (u_H for sh)
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + 2*ms - 1  ! v_L for sl aggregate
                 IBs(nvar + 1 + n_idpos + n_idneg + 2) = nvar + 1 + ms        ! u_H for sh aggregate
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 ! Only sl: R code uses nvar+1+2*ms for v_L
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + 2*ms
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 ! Only sh: R code uses nvar+1+ms for u_H
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + ms
             end if
@@ -783,10 +834,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             do i = nvar + 2, nvar + 1 + n_hbar_core
                 freevarrows(i) = .false.
             end do
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! sl aggregate row
                 freevarrows(nvar + 1 + n_hbar_core + 2) = .true.  ! sh aggregate row
-            else if (any(sl) .or. any(sh)) then
+            else if (has_sl_agg .or. has_sh_agg) then
                 freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! single aggregate row
             end if
             freevarrows(ms + 1) = .true.  ! objective row
@@ -812,14 +863,14 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             end do
 
             ! Then append aggregate rows from m+1 and m+2 if they exist
-            if (any(sl)) then
+            if (has_sl_agg) then
                 do j = 1, nvar+1
                     gammaxs(n_subsample + 1, j) = gammaxs_temp(m+1, j)
                 end do
             end if
-            if (any(sh)) then
+            if (has_sh_agg) then
                 k = n_subsample + 1
-                if (any(sl)) k = k + 1  ! If sl exists, sh goes to next position
+                if (has_sl_agg) k = k + 1  ! If sl exists, sh goes to next position
                 do j = 1, nvar+1
                     gammaxs(k, j) = gammaxs_temp(m+2, j)
                 end do
@@ -908,12 +959,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end do
                 ! Add aggregate elements to lambda
                 ! NOTE: Hbar is [idpos, idneg, m+1, m+2] so aggregates are at positions n_idpos+n_idneg+1 and +2
-                if (any(sl)) then
+                if (has_sl_agg) then
                     lambda(n_idpos + n_idneg + 1) = 1.0d0 - tau  ! sl aggregate: 1-tau
                 end if
-                if (any(sh)) then
+                if (has_sh_agg) then
                     k = n_idpos + n_idneg + 1
-                    if (any(sl)) k = k + 1
+                    if (has_sl_agg) k = k + 1
                     lambda(k) = tau  ! sh aggregate: tau
                 end if
 
@@ -1209,14 +1260,14 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             do i = 1, n_idneg
                 Hbar(n_idpos + i) = idneg(i)
             end do
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 Hbar(n_hbar + 1) = m + 1
                 Hbar(n_hbar + 2) = m + 2
                 n_hbar = n_hbar + 2
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 Hbar(n_hbar + 1) = m + 1
                 n_hbar = n_hbar + 1
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 Hbar(n_hbar + 1) = m + 2
                 n_hbar = n_hbar + 1
             end if
@@ -1383,7 +1434,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! ========================================================
             ! Update aggregate rows (R lines 700-724)
             ! ========================================================
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 ! R lines 701-704: Update both sl and sh aggregates
                 ! gammaxs.temp[m+1,] <- gammaxs.temp[m+1,] %*% xhinv
                 do j = 1, nvar+1
@@ -1427,7 +1478,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 !DEBUG                    write(*,'(A,2F15.8)') '  gammaxs_temp[m+2,]:', gammaxs_temp(m+2, :)
 !DEBUG                    write(*,'(A,F15.8)') '  bs_temp[m+2]:', bs_temp(m+2)
 !DEBUG                end if
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 ! Only sl aggregate (R lines 709-710)
                 do j = 1, nvar+1
                     temp_vec(j) = 0.0d0
@@ -1450,7 +1501,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 !DEBUG                    write(*,'(A,2F15.8)') '  gammaxs_temp[m+1,]:', gammaxs_temp(m+1, :)
 !DEBUG                    write(*,'(A,F15.8)') '  bs_temp[m+1]:', bs_temp(m+1)
 !DEBUG                end if
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 ! Only sh aggregate (R lines 715-716)
                 do j = 1, nvar+1
                     temp_vec(j) = 0.0d0
@@ -1491,18 +1542,18 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 !DEBUG            if (rd == 3) then
 !DEBUG                write(*,*) 'Final tableau assembly:'
 !DEBUG                write(*,*) '  n_xhinv_hbar:', n_xhinv_hbar
-!DEBUG                write(*,*) '  any(sl):', any(sl)
-!DEBUG                write(*,*) '  any(sh):', any(sh)
+!DEBUG                write(*,*) '  has_sl_agg:', has_sl_agg
+!DEBUG                write(*,*) '  has_sh_agg:', has_sh_agg
 !DEBUG                write(*,*) '  gammaxs_temp[1,]:', gammaxs_temp(1, 1), gammaxs_temp(1, 2)
 !DEBUG                write(*,*) '  gammaxs_temp[2,]:', gammaxs_temp(2, 1), gammaxs_temp(2, 2)
 !DEBUG                if (n_idpos > 0) then
 !DEBUG                    write(*,*) '  gammaxs_temp[3,] (first pos Hbar):', gammaxs_temp(3, 1), gammaxs_temp(3, 2)
 !DEBUG                end if
-!DEBUG                if (any(sl)) write(*,*) '  gammaxs_temp[m+1,]:', gammaxs_temp(m+1, 1), gammaxs_temp(m+1, 2)
-!DEBUG                if (any(sh)) write(*,*) '  gammaxs_temp[m+2,]:', gammaxs_temp(m+2, 1), gammaxs_temp(m+2, 2)
+!DEBUG                if (has_sl_agg) write(*,*) '  gammaxs_temp[m+1,]:', gammaxs_temp(m+1, 1), gammaxs_temp(m+1, 2)
+!DEBUG                if (has_sh_agg) write(*,*) '  gammaxs_temp[m+2,]:', gammaxs_temp(m+2, 1), gammaxs_temp(m+2, 2)
 !DEBUG            end if
 
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 ! Copy xhinv and Hbar rows 1:(ms-2), then aggregates m+1, m+2
                 do i = 1, n_xhinv_hbar
                     do j = 1, nvar+1
@@ -1525,7 +1576,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end do
                 lambda(n_idpos + n_idneg + 1) = 1.0d0 - tau
                 lambda(n_idpos + n_idneg + 2) = tau
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 ! Copy xhinv and Hbar rows 1:(ms-1), then aggregate m+1
                 do i = 1, n_xhinv_hbar
                     do j = 1, nvar+1
@@ -1544,7 +1595,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     lambda(n_idpos + i) = (1.0d0 - tau) * ws(idneg(i))
                 end do
                 lambda(n_idpos + n_idneg + 1) = 1.0d0 - tau
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 ! Copy xhinv and Hbar rows 1:(ms-1), then aggregate m+2
                 do i = 1, n_xhinv_hbar
                     do j = 1, nvar+1
@@ -1584,10 +1635,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! This extracts the Hbar rows (which are already stored in gammaxs after xhinv rows)
             ! R: gammaxs <- rbind(gammaxs, tau * ws[H] + t(lambda) %*% Pxhbarxhinv)
             ! Compute current ms (number of rows in gammaxs after assembly)
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 ms_current = n_xhinv_hbar + 2
                 n_lambda = n_idpos + n_idneg + 2
-            else if (any(sl) .or. any(sh)) then
+            else if (has_sl_agg .or. has_sh_agg) then
                 ms_current = n_xhinv_hbar + 1
                 n_lambda = n_idpos + n_idneg + 1
             else
@@ -1632,12 +1683,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 v_in_IBs(i) = idneg(i) + nvar + 1 + ms
                 IBs(nvar + 1 + n_idpos + i) = v_in_IBs(i)
             end do
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + 2*ms - 1
                 IBs(nvar + 1 + n_idpos + n_idneg + 2) = nvar + 1 + ms
-            else if (any(sl)) then
+            else if (has_sl_agg) then
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + 2*ms
-            else if (any(sh)) then
+            else if (has_sh_agg) then
                 IBs(nvar + 1 + n_idpos + n_idneg + 1) = nvar + 1 + ms
             end if
 
@@ -1651,10 +1702,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             do i = nvar + 2, nvar + 1 + n_hbar_core
                 freevarrows(i) = .false.
             end do
-            if (any(sl) .and. any(sh)) then
+            if (has_sl_agg .and. has_sh_agg) then
                 freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! sl aggregate row
                 freevarrows(nvar + 1 + n_hbar_core + 2) = .true.  ! sh aggregate row
-            else if (any(sl) .or. any(sh)) then
+            else if (has_sl_agg .or. has_sh_agg) then
                 freevarrows(nvar + 1 + n_hbar_core + 1) = .true.  ! single aggregate row
             end if
             freevarrows(ms + 1) = .true.
@@ -1860,7 +1911,7 @@ contains
     logical function terminal_cert_failure()
         implicit none
 
-        terminal_cert_failure = (ms >= m) .or. ((.not. any(sl)) .and. (.not. any(sh))) .or. force_full_sample
+        terminal_cert_failure = (ms >= m) .or. ((.not. has_sl_agg) .and. (.not. has_sh_agg)) .or. force_full_sample
     end function terminal_cert_failure
 
     subroutine handle_certification_reject(should_return)
@@ -1899,8 +1950,8 @@ contains
         end do
 
         sms_org = ms
-        if (any(sl)) sms_org = sms_org - 1
-        if (any(sh)) sms_org = sms_org - 1
+        if (has_sl_agg) sms_org = sms_org - 1
+        if (has_sh_agg) sms_org = sms_org - 1
 
         n_pos_prev = 0
         n_neg_prev = 0

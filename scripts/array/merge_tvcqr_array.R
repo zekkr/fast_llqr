@@ -24,6 +24,14 @@ as_bool <- function(x, default = FALSE) {
   if (is.na(x) || nchar(x) == 0) return(default)
   tolower(x) %in% c("1","true","t","yes","y")
 }
+as_threshold_scale_mode <- function(x, default = "loglog") {
+  value <- tolower(trimws(Sys.getenv(x, unset = default)))
+  if (is.na(value) || nchar(value) == 0) return(default)
+  if (!(value %in% c("loglog", "log"))) {
+    stop(sprintf("%s must be loglog or log, got: %s", x, value))
+  }
+  value
+}
 as_num_vec <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
   if (is.na(x) || nchar(x) == 0) return(default)
@@ -61,6 +69,14 @@ burn_in   <- as_int("FASTQR_BURN_IN", 500)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
 min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
+threshold_scale_mode <- as_threshold_scale_mode("FASTQR_THRESHOLD_SCALE_MODE", "loglog")
+if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
+  stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
+}
+if (!threshold_lower_bound && any(!is.finite(Mm.factor) | Mm.factor <= 0)) {
+  stop("FASTQR_MM_FACTOR must contain only positive finite values when FASTQR_THRESHOLD_LOWER_BOUND is false.")
+}
 
 config <- list(
   case = case,
@@ -78,7 +94,9 @@ config <- list(
   seed_base = seed_base,
   J = J,
   burn_in = burn_in,
-  min_subsample_size = min_subsample_size
+  min_subsample_size = min_subsample_size,
+  threshold_lower_bound = threshold_lower_bound,
+  threshold_scale_mode = threshold_scale_mode
 )
 config <- complete_tvcqr_sim_config(config)
 
@@ -92,6 +110,8 @@ cat(sprintf("partial_dir=%s\n", partial_dir))
 cat(sprintf("case=%d (%s), tau=%.2f, n=%d, num_rep=%d\n",
             config$case, config$case_label, tau, n, num_rep))
 cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n")
+cat("threshold_lower_bound:", threshold_lower_bound, "\n")
+cat("threshold_scale_mode:", threshold_scale_mode, "\n")
 if (config$case == 2L) {
   cat(sprintf("J=%d, burn_in=%d\n", config$J, config$burn_in))
 }

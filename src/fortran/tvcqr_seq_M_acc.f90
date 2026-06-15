@@ -10,13 +10,15 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    M_out, first_n_sub, repair_count, final_n_sub, &
                                    H_seq, same_h_refit_attempted, &
                                    same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in, &
-                                   always_same_h_refit_int)
+                                   always_same_h_refit_int, threshold_lower_bound_int, &
+                                   threshold_scale_mode_int)
     
     implicit none
     
     ! Input arguments
     integer, intent(in) :: m, nvar, maxit, bland_int, store_residual_int, debug_int
     integer, intent(in) :: min_subsample_size_in, always_same_h_refit_int
+    integer, intent(in) :: threshold_lower_bound_int, threshold_scale_mode_int
     double precision, intent(in) :: x(m, nvar), y(m), tau, tol, h_factor
     double precision, intent(in) :: Mm_factor, eps
     double precision, intent(inout) :: h
@@ -37,11 +39,13 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer, intent(out) :: failed_eval
     
     ! Local variables
-    double precision :: x_norms(m), mm_thresh, mmm_thresh, M_threshold
-    logical :: sl(m), sh(m), not_jl_or_jh(m)
+    double precision :: x_norms(m), mm_thresh, mmm_thresh, M_threshold, threshold_scale
+    logical :: sl(m), sh(m), not_jl_or_jh(m), active(m)
+    logical :: has_sl_agg, has_sh_agg
     integer :: idx_not_jl_or_jh(m)
     double precision :: temp_check
     integer :: min_subsample_size, n_potential_S
+    integer :: n_active, target_min
     double precision :: residual_scale, pivot_tol
     double precision :: abs_r(m)  ! NEW - for median of absolute residuals
     
@@ -90,7 +94,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer :: i, j, k, t, eva_t, iter
     integer :: t_rr, tsep
     double precision :: rrl, min_k, temp_sum
-    logical :: bland, store_residual, debug_requested, always_same_h_refit
+    logical :: bland, store_residual, debug_requested, always_same_h_refit, threshold_lower_bound
     double precision :: b_k_original
     logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok, refit_used
     logical :: first_n_sub_recorded
@@ -120,7 +124,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     
     integer :: n_hbar_rows        ! For the critical lambda/Pxhbarxhinv dimension
     integer :: idx_count, idx_loop
-    double precision :: weight_sum
+    double precision :: weight_sum, sum_w_sl, sum_w_sh
 
     double precision, allocatable :: A(:,:)           ! Size: m × 2(nvar+1)
     double precision, allocatable :: gammax(:,:)      ! Size: (m+1) × 2(nvar+1)
@@ -155,6 +159,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     store_residual = (store_residual_int /= 0)
     debug_requested = (debug_int /= 0)
     always_same_h_refit = (always_same_h_refit_int /= 0)
+    threshold_lower_bound = (threshold_lower_bound_int /= 0)
     pivot_tol = max(10.0d0 * tol, 1.0d-12)
     max_empty_pivot_retries = 3
     res_tol = 1.0d-6
@@ -217,7 +222,21 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     same_h_refit_attempted = 0
     same_h_refit_recovered = 0
     M_out = 0.0d0
-    
+    if (threshold_scale_mode_int == 1) then
+        threshold_scale = log(log(dble(m)))
+    else if (threshold_scale_mode_int == 2) then
+        threshold_scale = log(dble(m))
+    else
+        ierr = 5
+        failed_eval = 1
+        return
+    end if
+    if ((.not. threshold_lower_bound) .and. Mm_factor <= 0.0d0) then
+        ierr = 5
+        failed_eval = 1
+        return
+    end if
+
     ! ============================================
     ! EVA_T = 1: Standard simplex (no preprocessing)
     ! ============================================
@@ -638,12 +657,15 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         !n_Hbar_neg = 0
 
         ! Update weights for current t
+        n_active = 0
         do i = 1, m
             if (abs(dble(eva_t)/dble(m) - time_index(i)) <= h) then
                 w(i) = 0.75d0 * (1.0d0 - ((dble(eva_t)/dble(m) - time_index(i))/h)**2)
             else
                 w(i) = 0.0d0
             end if
+            active(i) = (w(i) > 0.0d0)
+            if (active(i)) n_active = n_active + 1
         end do
 
 
@@ -714,7 +736,11 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 end do
                 ! Fix 4: Scale threshold to residual magnitude (KEEP THIS!)
                 residual_scale = median_value(abs_r, m)
-                M_threshold = max(Mm_factor * mmm_thresh * log(log(dble(m))), 0.1d0 * residual_scale)
+                if (threshold_lower_bound) then
+                    M_threshold = max(Mm_factor * mmm_thresh * threshold_scale, 0.1d0 * residual_scale)
+                else
+                    M_threshold = Mm_factor * mmm_thresh * threshold_scale
+                end if
 
                 ! NEW: Ensure minimum subsample size
                 if (min_subsample_size_in >= 0) then
@@ -723,20 +749,26 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     min_subsample_size = max(5 * (2 * (nvar + 1)), ceiling(0.2d0 * dble(m)))
                 end if
 
-                ! Count potential observations in S
+                target_min = min(min_subsample_size, n_active)
+
+                ! Count active potential observations in S
                 n_potential_S = 0
+                min_k = 0.0d0
                 do i = 1, m
-                    if (abs(r(i)) <= M_threshold) then
+                    if (active(i)) then
+                        if (abs(r(i)) > min_k) min_k = abs(r(i))
+                    end if
+                    if (active(i) .and. abs(r(i)) <= M_threshold) then
                         n_potential_S = n_potential_S + 1
                     end if
                 end do
 
-                ! If too few observations would remain, increase M
-                do while (n_potential_S < min_subsample_size .and. M_threshold < maxval(abs(r)))
+                ! If too few active observations would remain, increase M.
+                do while (n_potential_S < target_min .and. M_threshold < min_k)
                     M_threshold = M_threshold * 1.5d0
                     n_potential_S = 0
                     do i = 1, m
-                        if (abs(r(i)) <= M_threshold) then
+                        if (active(i) .and. abs(r(i)) <= M_threshold) then
                             n_potential_S = n_potential_S + 1
                         end if
                     end do
@@ -744,8 +776,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 
                 
                 do i = 1, m
-                    sl(i) = r(i) < -M_threshold
-                    sh(i) = r(i) > M_threshold
+                    sl(i) = active(i) .and. r(i) < -M_threshold
+                    sh(i) = active(i) .and. r(i) > M_threshold
                 end do
 
 
@@ -758,12 +790,19 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-            ! Always rebuild the retained-subsample mask from current sl/sh.
-            do i = 1, m
-                not_jl_or_jh(i) = .not. (sl(i) .or. sh(i))
-            end do
+            ! Always rebuild the retained-subsample mask from active current sl/sh.
+            if (force_full_sample) then
+                sl = .false.
+                sh = .false.
+                not_jl_or_jh = active
+            else
+                do i = 1, m
+                    not_jl_or_jh(i) = active(i) .and. (.not. (sl(i) .or. sh(i)))
+                end do
+            end if
 
             ! Always force previous H observations into the retained subsample.
+            ! Zero-weight previous-H rows are basis padding, not active screened rows.
             do k = 1, 2*(nvar+1)
                 idx = H_seq(eva_t-1, k)
                 if (idx < 1 .or. idx > m) then
@@ -788,15 +827,25 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ! Recompute all counts and retained indices after force-H.
             n_sl = 0
             n_sh = 0
+            sum_w_sl = 0.0d0
+            sum_w_sh = 0.0d0
             ms_org = 0
             do i = 1, m
                 if (not_jl_or_jh(i)) then
                     ms_org = ms_org + 1
                     idx_not_jl_or_jh(ms_org) = i
                 end if
-                if (sl(i)) n_sl = n_sl + 1
-                if (sh(i)) n_sh = n_sh + 1
+                if (sl(i)) then
+                    n_sl = n_sl + 1
+                    sum_w_sl = sum_w_sl + w(i)
+                end if
+                if (sh(i)) then
+                    n_sh = n_sh + 1
+                    sum_w_sh = sum_w_sh + w(i)
+                end if
             end do
+            has_sl_agg = (sum_w_sl > 0.0d0)
+            has_sh_agg = (sum_w_sh > 0.0d0)
             ms = ms_org
 
             if (ms_org < 2*(nvar+1)) then
@@ -847,7 +896,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             end if
             
             ! Add aggregated observations if JL is not empty
-            if (n_sl > 0) then
+            if (has_sl_agg) then
                 glob_wx = 0.0d0
                 glob_wy = 0.0d0
                 
@@ -878,7 +927,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             end if
             
             ! Add aggregated observations if JH is not empty
-            if (n_sh > 0) then
+            if (has_sh_agg) then
                 ghib_wx = 0.0d0
                 ghib_wy = 0.0d0
                 
@@ -1065,7 +1114,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ! Now handle the initialization based on eva_t
             if (eva_t == 2) then
                 ! Initialize IBs and freevarrow based on four cases
-                if (n_sl > 0 .and. n_sh > 0) then
+                if (has_sl_agg .and. has_sh_agg) then
                     ! Case 1: Both JL and JH non-empty
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
@@ -1123,7 +1172,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
 
-                else if (n_sl > 0) then
+                else if (has_sl_agg) then
                     ! Case 2: Only JL non-empty
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
@@ -1170,7 +1219,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     freevarrow(ms) = .true.
                     freevarrow(ms+1) = .true.
                     
-                else if (n_sh > 0) then
+                else if (has_sh_agg) then
                     ! Case 3: Only JH non-empty
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
@@ -1302,7 +1351,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 end do
                 
                 ! Handle JL and JH based on case
-                if (n_sl > 0 .and. n_sh > 0) then
+                if (has_sl_agg .and. has_sh_agg) then
                     ! For v_L (JL aggregated), P has -1
                     do j = 1, 2*(nvar+1)
                         Pxhbarxhinv(n_idpos + n_idneg + 1, j) = 0.0d0
@@ -1320,7 +1369,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                                                    gammaxs(ms, k) * xhinv(k, j)
                         end do
                     end do
-                else if (n_sl > 0) then
+                else if (has_sl_agg) then
                     ! Only v_L
                     do j = 1, 2*(nvar+1)
                         Pxhbarxhinv(n_idpos + n_idneg + 1, j) = 0.0d0
@@ -1329,7 +1378,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                                                    gammaxs(ms, k) * xhinv(k, j)
                         end do
                     end do
-                else if (n_sh > 0) then
+                else if (has_sh_agg) then
                     ! Only u_H
                     do j = 1, 2*(nvar+1)
                         Pxhbarxhinv(n_idpos + n_idneg + 1, j) = 0.0d0
@@ -1353,8 +1402,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 
                 ! Next rows are -Pxhbarxhinv
                 k = n_idpos + n_idneg
-                if (n_sl > 0) k = k + 1
-                if (n_sh > 0) k = k + 1
+                if (has_sl_agg) k = k + 1
+                if (has_sh_agg) k = k + 1
                 
                 do i = 1, k
                     do j = 1, 2*(nvar+1)
@@ -1408,7 +1457,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 end do
                 
                 ! Handle JL and JH
-                if (n_sl > 0 .and. n_sh > 0) then
+                if (has_sl_agg .and. has_sh_agg) then
                     bs(ms-1) = -bs_temp(m+1)
                     do j = 1, 2*(nvar+1)
                         bs(ms-1) = bs(ms-1) - Pxhbarxhinv(n_idpos + n_idneg + 1, j) * bs_temp(H_indices(j))
@@ -1418,12 +1467,12 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     do j = 1, 2*(nvar+1)
                         bs(ms) = bs(ms) - Pxhbarxhinv(n_idpos + n_idneg + 2, j) * bs_temp(H_indices(j))
                     end do
-                else if (n_sl > 0) then
+                else if (has_sl_agg) then
                     bs(ms) = -bs_temp(m+1)
                     do j = 1, 2*(nvar+1)
                         bs(ms) = bs(ms) - Pxhbarxhinv(n_idpos + n_idneg + 1, j) * bs_temp(H_indices(j))
                     end do
-                else if (n_sh > 0) then
+                else if (has_sh_agg) then
                     bs(ms) = bs_temp(m+2)
                     do j = 1, 2*(nvar+1)
                         bs(ms) = bs(ms) - Pxhbarxhinv(n_idpos + n_idneg + 1, j) * bs_temp(H_indices(j))
@@ -1586,7 +1635,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
                 ! Handle JL and JH aggregated rows
-                if (n_sl > 0 .and. n_sh > 0) then
+                if (has_sl_agg .and. has_sh_agg) then
 
 
 
@@ -1657,7 +1706,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     lambda(n_idpos + n_idneg + 1) = 1.0d0 - tau
                     lambda(n_idpos + n_idneg + 2) = tau
                     
-                else if (n_sl > 0) then
+                else if (has_sl_agg) then
                     ! Similar for only JL case
                     do j = 1, 2*(nvar+1)
                         temp_vec(j) = 0.0d0
@@ -1706,7 +1755,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     
 
 
-                else if (n_sh > 0) then
+                else if (has_sh_agg) then
 
 
 
@@ -1773,7 +1822,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 end if
                 
                 ! Set up IBs and freevarrow (same logic as eva_t = 2)
-                if (n_sl > 0 .and. n_sh > 0) then
+                if (has_sl_agg .and. has_sh_agg) then
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
                     end do
@@ -1807,7 +1856,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 
                     
-                else if (n_sl > 0) then
+                else if (has_sl_agg) then
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
                     end do
@@ -1834,7 +1883,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     freevarrow(ms) = .true.
                     freevarrow(ms+1) = .true.
                     
-                else if (n_sh > 0) then
+                else if (has_sh_agg) then
                     do i = 1, 2*(nvar+1)
                         IBs(i) = i
                     end do
@@ -2493,7 +2542,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     cycle
                 end if
                 if (.not. accept_subsample) then
-                    if ((.not. any(sl)) .and. (.not. any(sh)) .and. (ms >= m)) then
+                    if (((.not. any(sl)) .and. (.not. any(sh))) .or. force_full_sample) then
                         call set_failure(1, eva_t)
                         return
                     end if
@@ -2553,9 +2602,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
   
                     ! Calculate ms_org for saving
-                    if (n_sl > 0 .and. n_sh > 0) then
+                    if (has_sl_agg .and. has_sh_agg) then
                         ms_org = ms - 2
-                    else if (n_sl > 0 .or. n_sh > 0) then
+                    else if (has_sl_agg .or. has_sh_agg) then
                         ms_org = ms - 1
                     else
                         ms_org = ms

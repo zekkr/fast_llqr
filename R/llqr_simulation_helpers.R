@@ -32,6 +32,20 @@ llqr_sim_bool <- function(value, default, name) {
   stop(sprintf("config$%s must be a boolean scalar.", name))
 }
 
+llqr_sim_threshold_scale_mode <- function(value, default = "loglog") {
+  if (is.null(value)) {
+    return(default)
+  }
+  if (!is.character(value) || length(value) != 1L || is.na(value)) {
+    stop("config$threshold_scale_mode must be one of 'loglog' or 'log'.")
+  }
+  value <- tolower(trimws(value))
+  if (!(value %in% c("loglog", "log"))) {
+    stop("config$threshold_scale_mode must be one of 'loglog' or 'log'.")
+  }
+  value
+}
+
 complete_llqr_sim_config <- function(config) {
   if (is.null(config$h.factor)) {
     config$h.factor <- 1
@@ -41,6 +55,24 @@ complete_llqr_sim_config <- function(config) {
     default = TRUE,
     name = "always_same_h_refit"
   )
+  config$threshold_lower_bound <- llqr_sim_bool(
+    config$threshold_lower_bound,
+    default = TRUE,
+    name = "threshold_lower_bound"
+  )
+  config$threshold_scale_mode <- llqr_sim_threshold_scale_mode(
+    config$threshold_scale_mode,
+    default = "loglog"
+  )
+  if (!config$threshold_lower_bound && !is.null(config$Mm.factor)) {
+    mm_factor_numeric <- as.numeric(config$Mm.factor)
+    if (length(mm_factor_numeric) == 0L ||
+        any(is.na(mm_factor_numeric)) ||
+        any(!is.finite(mm_factor_numeric)) ||
+        any(mm_factor_numeric <= 0)) {
+      stop("config$Mm.factor must contain only positive finite values when threshold_lower_bound is FALSE.")
+    }
+  }
   if (is.null(config$min_subsample_size)) {
     config$min_subsample_size <- NULL
   } else {
@@ -195,6 +227,8 @@ create_llqr_methods <- function(Mm.factor_vec) {
                                         bland = config$bland,
                                         min_subsample_size = config$min_subsample_size,
                                         always_same_h_refit = config$always_same_h_refit,
+                                        threshold_lower_bound = config$threshold_lower_bound,
+                                        threshold_scale_mode = config$threshold_scale_mode,
                                         track_order = config$track_order)
         }
       })
@@ -313,6 +347,8 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
       h_factor = as.numeric(config$h.factor),
       min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
       always_same_h_refit = isTRUE(config$always_same_h_refit),
+      threshold_lower_bound = isTRUE(config$threshold_lower_bound),
+      threshold_scale_mode = as.character(first_or(config$threshold_scale_mode, NA_character_)),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
       llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_,
       returned_backend = returned_backend,

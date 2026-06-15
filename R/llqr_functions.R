@@ -1769,7 +1769,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                                       debug_rounds = NULL,
                                       min_subsample_size = NULL,
                                       store_residual = FALSE,
-                                      always_same_h_refit = TRUE) {
+                                      always_same_h_refit = TRUE,
+                                      threshold_lower_bound = TRUE,
+                                      threshold_scale_mode = c("loglog", "log")) {
   ensure_llqr_fortran_library_loaded("llqr_ppro.so")
   case <- llqr_validate_case(case)
   h.factor <- llqr_validate_h_factor(h.factor)
@@ -1855,6 +1857,26 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       stop("min_subsample_size must be a positive finite scalar or NULL.")
     }
   }
+  if (!is.logical(threshold_lower_bound) ||
+      length(threshold_lower_bound) != 1L ||
+      is.na(threshold_lower_bound)) {
+    stop("threshold_lower_bound must be a non-missing logical scalar.")
+  }
+  threshold_scale_mode <- match.arg(threshold_scale_mode)
+  threshold_scale_mode_int <- switch(
+    threshold_scale_mode,
+    loglog = 1L,
+    log = 2L
+  )
+  if (!threshold_lower_bound) {
+    Mm.factor_numeric <- as.numeric(Mm.factor)
+    if (length(Mm.factor_numeric) != 1L ||
+        is.na(Mm.factor_numeric) ||
+        !is.finite(Mm.factor_numeric) ||
+        Mm.factor_numeric <= 0) {
+      stop("Mm.factor must be a positive finite scalar when threshold_lower_bound is FALSE.")
+    }
+  }
 
   bland_int <- if (bland) 1L else 0L
   
@@ -1884,7 +1906,9 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      final_n_sub = integer(rounds),
                      ierr = integer(1),
                      failed_eval = integer(1),
-                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)))
+                     always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)),
+                     threshold_lower_bound_int = as.integer(threshold_lower_bound),
+                     threshold_scale_mode_int = as.integer(threshold_scale_mode_int))
 
   raw_backend <- list(
     ll_est = as.numeric(result$ll_est),

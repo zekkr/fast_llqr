@@ -1618,7 +1618,9 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                                            store_residual = FALSE, fallback = FALSE,
                                            debug_trace = FALSE,
                                            min_subsample_size = NULL,
-                                           always_same_h_refit = TRUE) {
+                                           always_same_h_refit = TRUE,
+                                           threshold_lower_bound = TRUE,
+                                           threshold_scale_mode = c("loglog", "log")) {
   
   # First, let's check if the Fortran function is properly loaded
   # This helps users identify if they need to compile and load the shared library
@@ -1660,6 +1662,26 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       stop("min_subsample_size must be a non-negative finite scalar or NULL.")
     }
     min_subsample_size_in <- as.integer(ceiling(min_subsample_size_numeric))
+  }
+  if (!is.logical(threshold_lower_bound) ||
+      length(threshold_lower_bound) != 1L ||
+      is.na(threshold_lower_bound)) {
+    stop("threshold_lower_bound must be a non-missing logical scalar.")
+  }
+  threshold_scale_mode <- match.arg(threshold_scale_mode)
+  threshold_scale_mode_int <- switch(
+    threshold_scale_mode,
+    loglog = 1L,
+    log = 2L
+  )
+  if (!threshold_lower_bound) {
+    Mm.factor_numeric <- as.numeric(Mm.factor)
+    if (length(Mm.factor_numeric) != 1L ||
+        is.na(Mm.factor_numeric) ||
+        !is.finite(Mm.factor_numeric) ||
+        Mm.factor_numeric <= 0) {
+      stop("Mm.factor must be a positive finite scalar when threshold_lower_bound is FALSE.")
+    }
   }
   
   # Handle bandwidth parameter
@@ -1729,6 +1751,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      failed_eval = as.integer(0),
                      min_subsample_size_in = as.integer(min_subsample_size_in),
                      always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)),
+                     threshold_lower_bound_int = as.integer(threshold_lower_bound),
+                     threshold_scale_mode_int = as.integer(threshold_scale_mode_int),
                      # Don't duplicate arrays (more efficient)
                      DUP = FALSE)
 

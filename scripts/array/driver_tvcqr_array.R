@@ -31,6 +31,14 @@ as_bool <- function(x, default = FALSE) {
   if (is.na(x) || nchar(x) == 0) return(default)
   tolower(x) %in% c("1","true","t","yes","y")
 }
+as_threshold_scale_mode <- function(x, default = "loglog") {
+  value <- tolower(trimws(Sys.getenv(x, unset = default)))
+  if (is.na(value) || nchar(value) == 0) return(default)
+  if (!(value %in% c("loglog", "log"))) {
+    stop(sprintf("%s must be loglog or log, got: %s", x, value))
+  }
+  value
+}
 as_num_vec <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
   if (is.na(x) || nchar(x) == 0) return(default)
@@ -145,8 +153,16 @@ burn_in   <- as_int("FASTQR_BURN_IN", 500)
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
+threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
+threshold_scale_mode <- as_threshold_scale_mode("FASTQR_THRESHOLD_SCALE_MODE", "loglog")
 require_nonneg_int(J, "FASTQR_J")
 require_nonneg_int(burn_in, "FASTQR_BURN_IN")
+if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
+  stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
+}
+if (!threshold_lower_bound && any(!is.finite(Mm.factor) | Mm.factor <= 0)) {
+  stop("FASTQR_MM_FACTOR must contain only positive finite values when FASTQR_THRESHOLD_LOWER_BOUND is false.")
+}
 
 config_base <- list(
   case = case,
@@ -165,7 +181,9 @@ config_base <- list(
   J = J,
   burn_in = burn_in,
   min_subsample_size = min_subsample_size,
-  always_same_h_refit = always_same_h_refit
+  always_same_h_refit = always_same_h_refit,
+  threshold_lower_bound = threshold_lower_bound,
+  threshold_scale_mode = threshold_scale_mode
 )
 config_base <- complete_tvcqr_sim_config(config_base)
 
@@ -188,6 +206,8 @@ cat(sprintf("partial_dir=%s\n", partial_dir))
 cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
 cat("always_same_h_refit:", always_same_h_refit, "\n")
+cat("threshold_lower_bound:", threshold_lower_bound, "\n")
+cat("threshold_scale_mode:", threshold_scale_mode, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")

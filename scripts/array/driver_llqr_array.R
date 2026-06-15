@@ -32,6 +32,14 @@ as_bool <- function(x, default = FALSE) {
   if (is.na(x) || nchar(x) == 0) return(default)
   tolower(x) %in% c("1","true","t","yes","y")
 }
+as_threshold_scale_mode <- function(x, default = "loglog") {
+  value <- tolower(trimws(Sys.getenv(x, unset = default)))
+  if (is.na(value) || nchar(value) == 0) return(default)
+  if (!(value %in% c("loglog", "log"))) {
+    stop(sprintf("%s must be loglog or log, got: %s", x, value))
+  }
+  value
+}
 as_timeout_fork_mode <- function(x, default = "auto") {
   x <- tolower(Sys.getenv(x, unset = default))
   if (is.na(x) || nchar(x) == 0) return(default)
@@ -151,12 +159,17 @@ parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
 min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
+threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
+threshold_scale_mode <- as_threshold_scale_mode("FASTQR_THRESHOLD_SCALE_MODE", "loglog")
 require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
 require_pos_int(max_seconds_per_rep, "FASTQR_MAX_SECONDS_PER_REP")
 if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
   stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
+}
+if (!threshold_lower_bound && any(!is.finite(Mm.factor) | Mm.factor <= 0)) {
+  stop("FASTQR_MM_FACTOR must contain only positive finite values when FASTQR_THRESHOLD_LOWER_BOUND is false.")
 }
 if (is.na(tol) || !is.finite(tol) || tol <= 0) {
   stop(sprintf("FASTQR_TOL must be > 0, got: %s", as.character(tol)))
@@ -193,7 +206,9 @@ config_base <- list(
   Mm.factor = Mm.factor,
   seed_base = seed_base,
   min_subsample_size = min_subsample_size,
-  always_same_h_refit = always_same_h_refit
+  always_same_h_refit = always_same_h_refit,
+  threshold_lower_bound = threshold_lower_bound,
+  threshold_scale_mode = threshold_scale_mode
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
@@ -216,6 +231,8 @@ cat("Mm.factor:", paste(Mm.factor, collapse = ", "), "\n")
 cat("h.factor:", h.factor, "\n")
 cat("min_subsample_size:", if (is.null(config_base$min_subsample_size)) "default" else config_base$min_subsample_size, "\n")
 cat("always_same_h_refit:", always_same_h_refit, "\n")
+cat("threshold_lower_bound:", threshold_lower_bound, "\n")
+cat("threshold_scale_mode:", threshold_scale_mode, "\n")
 cat("seed_base:", seed_base, "\n\n")
 cat("max_attempts_per_rep:", max_attempts_per_rep, "\n")
 cat("retry_stride:", retry_stride, "\n\n")
