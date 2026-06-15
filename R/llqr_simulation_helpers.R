@@ -219,6 +219,40 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     }
     value[[1L]]
   }
+  int_vec_or_null <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(NULL)
+    }
+    as.integer(value)
+  }
+  summarize_numeric_eval <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    x <- suppressWarnings(as.numeric(value))
+    if (length(x) >= 2L) {
+      x <- x[-1L]
+    }
+    x <- x[is.finite(x)]
+    if (length(x) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    list(min = min(x), max = max(x), mean = mean(x))
+  }
+  first_pass_summary <- function(repair_count, returned_backend, fallback_triggered) {
+    if (is.null(repair_count) || length(repair_count) < 2L ||
+        !identical(returned_backend, "ppro") || isTRUE(fallback_triggered)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    x <- as.integer(repair_count[-1L])
+    known <- !is.na(x)
+    if (!any(known)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    count <- as.integer(sum(x[known] == 0L))
+    total <- as.integer(sum(known))
+    list(count = count, total = total, rate = count / total)
+  }
   seed_used <- if (!is.null(config$seed_used)) {
     as.integer(config$seed_used)
   } else {
@@ -266,6 +300,14 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     # Use single-bracket assignment so NULL remains an explicit named slot.
     results$H_seq[method_name] <- list(if (!is.null(fit$H_seq)) fit$H_seq else NULL)
 
+    returned_backend <- as.character(first_or(fit$returned_backend, NA_character_))
+    fallback_triggered <- if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered)
+    final_n_sub <- if (!is.null(fit$final_n_sub)) fit$final_n_sub else fit$n_sub
+    first_n_sub_summary <- summarize_numeric_eval(fit$first_n_sub)
+    final_n_sub_summary <- summarize_numeric_eval(final_n_sub)
+    repair_count_summary <- summarize_numeric_eval(fit$repair_count)
+    first_pass <- first_pass_summary(fit$repair_count, returned_backend, fallback_triggered)
+
     results$method_metadata[[method_name]] <- list(
       h_used = if (!is.null(fit$h_used)) as.numeric(fit$h_used) else if (!is.null(fit$h)) as.numeric(fit$h) else NA_real_,
       h_factor = as.numeric(config$h.factor),
@@ -273,13 +315,28 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
       always_same_h_refit = isTRUE(config$always_same_h_refit),
       h_retry_factor = if (!is.null(fit$h_retry_factor)) as.numeric(fit$h_retry_factor) else NA_real_,
       llqr_attempts = if (!is.null(fit$llqr_attempts)) as.integer(fit$llqr_attempts) else NA_integer_,
-      returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
-      fallback_triggered = if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered),
+      returned_backend = returned_backend,
+      fallback_triggered = fallback_triggered,
       cert_fail_detected = if (is.null(fit$cert_fail_detected)) NA else isTRUE(fit$cert_fail_detected),
       fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),
       failure_reason = as.character(first_or(fit$failure_reason, NA_character_)),
       first_failed_eval = as.integer(first_or(fit$first_failed_eval, NA_integer_)),
-      backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_))
+      backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_)),
+      first_n_sub = int_vec_or_null(fit$first_n_sub),
+      repair_count = int_vec_or_null(fit$repair_count),
+      final_n_sub = int_vec_or_null(final_n_sub),
+      first_n_sub_min = first_n_sub_summary$min,
+      first_n_sub_max = first_n_sub_summary$max,
+      first_n_sub_mean = first_n_sub_summary$mean,
+      final_n_sub_min = final_n_sub_summary$min,
+      final_n_sub_max = final_n_sub_summary$max,
+      final_n_sub_mean = final_n_sub_summary$mean,
+      repair_count_min = repair_count_summary$min,
+      repair_count_max = repair_count_summary$max,
+      repair_count_mean = repair_count_summary$mean,
+      first_pass_count = first_pass$count,
+      first_pass_total = first_pass$total,
+      first_pass_rate = first_pass$rate
     )
     
     # Extract timing in seconds

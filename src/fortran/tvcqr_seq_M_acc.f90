@@ -7,7 +7,8 @@
 subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, store_residual_int, debug_int, &
                                    theta_ll_est, beta_full_est, it_num, residual_est, &
-                                   M_out, n_sub, H_seq, same_h_refit_attempted, &
+                                   M_out, first_n_sub, repair_count, final_n_sub, &
+                                   H_seq, same_h_refit_attempted, &
                                    same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in, &
                                    always_same_h_refit_int)
     
@@ -26,7 +27,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer, intent(out) :: it_num(m)
     double precision, intent(out) :: residual_est(*)
     double precision, intent(out) :: M_out
-    integer, intent(out) :: n_sub(m)
+    integer, intent(out) :: first_n_sub(m)
+    integer, intent(out) :: repair_count(m)
+    integer, intent(out) :: final_n_sub(m)
     integer, intent(out) :: H_seq(m, 2*(nvar+1))
     integer, intent(out) :: same_h_refit_attempted(m)
     integer, intent(out) :: same_h_refit_recovered(m)
@@ -90,6 +93,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     logical :: bland, store_residual, debug_requested, always_same_h_refit
     double precision :: b_k_original
     logical :: not_optimal, not_new_sl_sh, debug_active, same_h_ok, refit_used
+    logical :: first_n_sub_recorded
     integer :: bad_signs, n_sl, n_sh, n_sure_signs
     integer :: idpos(m), idneg(m), n_idpos, n_idneg
     integer :: H_indices(2*(nvar+1)), Hbar_indices(m+2)
@@ -206,7 +210,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             residual_est(i) = 0.0d0
         end do
     end if
-    n_sub = 0
+    first_n_sub = 0
+    repair_count = 0
+    final_n_sub = 0
     H_seq = 0
     same_h_refit_attempted = 0
     same_h_refit_recovered = 0
@@ -282,7 +288,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         r2(i) = 0
     end do
     
-    n_sub(1) = m
+    first_n_sub(1) = m
+    repair_count(1) = 0
+    final_n_sub(1) = m
     
     ! Simplex iterations for eva_t = 1
     iter = 0
@@ -646,6 +654,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         
         j = 0
         iter = 0  ! Initialize iteration counter here, outside preprocessing loop
+        repair_count(eva_t) = 0
+        first_n_sub_recorded = .false.
 
         preprocessing_attempts = 0
         do while (not_optimal)
@@ -706,7 +716,6 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 residual_scale = median_value(abs_r, m)
                 M_threshold = max(Mm_factor * mmm_thresh * log(log(dble(m))), 0.1d0 * residual_scale)
 
-                
                 ! NEW: Ensure minimum subsample size
                 if (min_subsample_size_in >= 0) then
                     min_subsample_size = min_subsample_size_in
@@ -763,6 +772,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                         return
                     end if
                     empty_pivot_count = empty_pivot_count + 1
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -795,6 +805,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     call set_failure(5, eva_t)
                     return
                 end if
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (preprocessing_attempts >= max_empty_pivot_retries) then
@@ -974,6 +985,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1258,6 +1270,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                         return
                     end if
                     empty_pivot_count = empty_pivot_count + 1
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1942,6 +1955,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1967,6 +1981,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             ! Simplex iterations for the reduced problem
             !iter = 0
 
+            if (.not. first_n_sub_recorded) then
+                first_n_sub(eva_t) = ms
+                first_n_sub_recorded = .true.
+            end if
 
 
             do while (iter < maxit)
@@ -2365,6 +2383,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm_thresh = 2.0d0 * mmm_thresh
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries .or. iter >= maxit) then
@@ -2478,6 +2497,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                         call set_failure(1, eva_t)
                         return
                     end if
+                    call record_repair()
                     mmm_thresh = 2.0d0 * mmm_thresh
                     not_new_sl_sh = .true.
                     cycle
@@ -2619,7 +2639,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         
         ! Store results for this time point
         it_num(eva_t) = iter
-        n_sub(eva_t) = ms
+        final_n_sub(eva_t) = ms
         M_out = M_threshold
         
 
@@ -2667,10 +2687,19 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 contains
 
+    subroutine record_repair()
+        implicit none
+
+        if (eva_t >= 1 .and. eva_t <= m) then
+            repair_count(eva_t) = repair_count(eva_t) + 1
+        end if
+    end subroutine record_repair
+
     subroutine handle_current_bad_signs()
         implicit none
         integer :: bi
 
+        call record_repair()
         if (bad_signs > int(0.1d0 * dble(ms))) then
             mmm_thresh = 2.0d0 * mmm_thresh
             not_new_sl_sh = .true.
@@ -2853,7 +2882,7 @@ contains
             end do
             res_mean = res_mean / dble(m)
             write(unit_num, '(I5,3F12.6,2I8)') i, res_min, res_max, res_mean, &
-                it_num(i), n_sub(i)
+                it_num(i), final_n_sub(i)
         end do
         close(unit_num)
         

@@ -121,7 +121,8 @@ end function max_array
 ! Main PPRO subroutine
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                              Mm_factor, case_int, bland_int, min_subsample_size_in, &
-                             ll_est, d_ll_est, it_num, residual_est, H_mat, n_sub_out, &
+                             ll_est, d_ll_est, it_num, residual_est, H_mat, first_n_sub_out, &
+                             repair_count_out, final_n_sub_out, &
                              ierr, failed_eval, always_same_h_refit_int)
 
     implicit none
@@ -138,7 +139,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer, intent(out) :: it_num(rounds)
     double precision, intent(out) :: residual_est(rounds, m)
     integer, intent(out) :: H_mat(rounds, nvar+1)
-    integer, intent(out) :: n_sub_out(rounds)
+    integer, intent(out) :: first_n_sub_out(rounds)
+    integer, intent(out) :: repair_count_out(rounds)
+    integer, intent(out) :: final_n_sub_out(rounds)
     integer, intent(out) :: ierr
     integer, intent(out) :: failed_eval
 
@@ -169,6 +172,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: H_prev(nvar+1)
     integer :: n_bad_signs
     logical :: not_optimal, not_new_sl_sh  ! Bad signs loop control
+    logical :: first_n_sub_recorded
     logical :: force_full_sample, no_pivot_flag, accept_subsample
     logical :: simplex_converged
     integer :: empty_pivot_count, max_empty_pivot_retries
@@ -203,7 +207,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: it_num_sorted(rounds)
     double precision :: residual_est_sorted(rounds, m)
     integer :: H_mat_sorted(rounds, nvar+1)
-    integer :: n_sub_sorted(rounds)
+    integer :: first_n_sub_sorted(rounds)
+    integer :: repair_count_sorted(rounds)
+    integer :: final_n_sub_sorted(rounds)
 
     ! Warm start variables (for rd==2)
     double precision :: xh(nvar+1, nvar+1)
@@ -258,8 +264,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     max_empty_pivot_retries = 3
     ierr = 0
     failed_eval = 0
-    n_sub_out = 0
-    n_sub_sorted = 0
+    first_n_sub_out = 0
+    repair_count_out = 0
+    final_n_sub_out = 0
+    first_n_sub_sorted = 0
+    repair_count_sorted = 0
+    final_n_sub_sorted = 0
 
     if (min_subsample_size_in > 0) then
         min_subsample_size_effective = min_subsample_size_in
@@ -411,8 +421,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     it_num_sorted(rd) = iter
     residual_est_sorted(rd, :) = u - v
     H_mat_sorted(rd, :) = r1 - 1 - nvar
-    n_sub_sorted(rd) = m
-    n_sub_out(z_order(rd)) = m
+    first_n_sub_sorted(rd) = m
+    repair_count_sorted(rd) = 0
+    final_n_sub_sorted(rd) = m
+    first_n_sub_out(z_order(rd)) = m
+    repair_count_out(z_order(rd)) = 0
+    final_n_sub_out(z_order(rd)) = m
 
     ! BUG FIX: Do NOT sort H_mat for rd=1!
     ! R code keeps H in simplex order: H <- r1 - 1 - nvar (no sort)
@@ -431,6 +445,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         empty_pivot_count = 0
         mmm = mm
         iter_total = 0
+        first_n_sub_recorded = .false.
+        repair_count_sorted(rd) = 0
 
         ! Compute kernel weights for current z (USING SORTED Z!)
         do i = 1, m
@@ -445,6 +461,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Step 1: Compute M threshold from previous residuals
             ! ========================================================
             r = residual_est_sorted(rd-1, :)
+            H_prev = H_mat_sorted(rd-1, :)
             if (not_new_sl_sh) then
                 residual_scale = median_abs(r, m)
                 M_threshold = max(Mm_factor * mmm * log(log(dble(m))), 0.1d0 * residual_scale)
@@ -468,7 +485,6 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
             ! Force H observations into the retained subsample every attempt,
             ! including after few-bad-sign repairs.
-            H_prev = H_mat_sorted(rd-1, :)
             if (force_full_sample) then
                 sl = .false.
                 sh = .false.
@@ -934,6 +950,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             ! Set bs for objective row at ms+1 (last row of tableau)
             bs(ms + 1) = 0.0d0
 
+            if (.not. first_n_sub_recorded) then
+                first_n_sub_sorted(rd) = ms
+                first_n_sub_recorded = .true.
+            end if
 
             ! Run PPRO-specific simplex on subsample
             ! NOTE: Pass ms (subsample size WITH aggregates), not n_subsample
@@ -963,6 +983,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm = mmm * 2.0d0
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1038,6 +1059,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end do
 
                 if (n_bad_signs > 0) then
+                    call record_repair()
                     ! R logic: if bad.signs > 0.1 * ms, double mmm; otherwise remove bad obs
                     if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
                         ! Too many bad signs: double M and retry
@@ -1060,6 +1082,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                     end if
                     if (n_bad_signs > 0) then
+                        call record_repair()
                         if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
                             mmm = mmm * 2.0d0
                             not_new_sl_sh = .true.
@@ -1074,8 +1097,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         ll_est_sorted(rd) = ll_candidate
                         d_ll_est_sorted(rd) = d_ll_candidate
                         it_num_sorted(rd) = iter_total
-                        n_sub_sorted(rd) = ms
-                        n_sub_out(z_order(rd)) = ms
+                        final_n_sub_sorted(rd) = ms
+                        final_n_sub_out(z_order(rd)) = ms
                         H_mat_sorted(rd, :) = H_candidate
                         r = r_raw
                         do i = 1, nvar+1
@@ -1099,8 +1122,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     ll_est_sorted(rd) = ll_candidate
                     d_ll_est_sorted(rd) = d_ll_candidate
                     it_num_sorted(rd) = iter_total
-                    n_sub_sorted(rd) = ms
-                    n_sub_out(z_order(rd)) = ms
+                    final_n_sub_sorted(rd) = ms
+                    final_n_sub_out(z_order(rd)) = ms
                     H_mat_sorted(rd, :) = H_candidate
                     r = r_raw
                     do i = 1, nvar+1
@@ -1649,6 +1672,11 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 bs_simplex(i) = bs(i)
             end do
 
+            if (.not. first_n_sub_recorded) then
+                first_n_sub_sorted(rd) = ms
+                first_n_sub_recorded = .true.
+            end if
+
             ! Run simplex (same as rd==2)
             remaining = maxit - iter_total
             if (remaining <= 0) then
@@ -1665,6 +1693,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     return
                 end if
                 empty_pivot_count = empty_pivot_count + 1
+                call record_repair()
                 mmm = mmm * 2.0d0
                 not_new_sl_sh = .true.
                 if (empty_pivot_count >= max_empty_pivot_retries) then
@@ -1710,6 +1739,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                 end do
 
                 if (n_bad_signs > 0) then
+                    call record_repair()
                     if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
                         mmm = mmm * 2.0d0
                         not_new_sl_sh = .true.
@@ -1727,6 +1757,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         if (refit_recertified .and. n_bad_signs == 0) accept_subsample = .true.
                     end if
                     if (n_bad_signs > 0) then
+                        call record_repair()
                         if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
                             mmm = mmm * 2.0d0
                             not_new_sl_sh = .true.
@@ -1741,8 +1772,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         ll_est_sorted(rd) = ll_candidate
                         d_ll_est_sorted(rd) = d_ll_candidate
                         it_num_sorted(rd) = iter_total
-                        n_sub_sorted(rd) = ms
-                        n_sub_out(z_order(rd)) = ms
+                        final_n_sub_sorted(rd) = ms
+                        final_n_sub_out(z_order(rd)) = ms
                         H_mat_sorted(rd, :) = H_candidate
                         r = r_raw
                         do i = 1, nvar+1
@@ -1766,8 +1797,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     ll_est_sorted(rd) = ll_candidate
                     d_ll_est_sorted(rd) = d_ll_candidate
                     it_num_sorted(rd) = iter_total
-                    n_sub_sorted(rd) = ms
-                    n_sub_out(z_order(rd)) = ms
+                    final_n_sub_sorted(rd) = ms
+                    final_n_sub_out(z_order(rd)) = ms
                     H_mat_sorted(rd, :) = H_candidate
                     r = r_raw
                     do i = 1, nvar+1
@@ -1797,7 +1828,9 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         ll_est(k) = ll_est_sorted(rd)
         d_ll_est(k) = d_ll_est_sorted(rd)
         it_num(k) = it_num_sorted(rd)
-        n_sub_out(k) = n_sub_sorted(rd)
+        first_n_sub_out(k) = first_n_sub_sorted(rd)
+        repair_count_out(k) = repair_count_sorted(rd)
+        final_n_sub_out(k) = final_n_sub_sorted(rd)
         do i = 1, m
             residual_est(k, i) = residual_est_sorted(rd, i)
         end do
@@ -1839,11 +1872,20 @@ contains
             write(6, *) 'ERROR: full-sample certification failed in llqr_ppro_fortran at rd=', rd
             should_return = .true.
         else
+            call record_repair()
             mmm = mmm * 2.0d0
             not_new_sl_sh = .true.
             should_return = .false.
         end if
     end subroutine handle_certification_reject
+
+    subroutine record_repair()
+        implicit none
+
+        if (rd >= 1 .and. rd <= rounds) then
+            repair_count_sorted(rd) = repair_count_sorted(rd) + 1
+        end if
+    end subroutine record_repair
 
     subroutine store_current_cache()
         implicit none

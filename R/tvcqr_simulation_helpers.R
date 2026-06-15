@@ -200,6 +200,40 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     }
     as.integer(sum(x, na.rm = TRUE))
   }
+  int_vec_or_null <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(NULL)
+    }
+    as.integer(value)
+  }
+  summarize_numeric_eval <- function(value) {
+    if (is.null(value) || length(value) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    x <- suppressWarnings(as.numeric(value))
+    if (length(x) >= 2L) {
+      x <- x[-1L]
+    }
+    x <- x[is.finite(x)]
+    if (length(x) == 0L) {
+      return(list(min = NA_real_, max = NA_real_, mean = NA_real_))
+    }
+    list(min = min(x), max = max(x), mean = mean(x))
+  }
+  first_pass_summary <- function(repair_count, returned_backend, fallback_triggered) {
+    if (is.null(repair_count) || length(repair_count) < 2L ||
+        !identical(returned_backend, "ppro") || isTRUE(fallback_triggered)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    x <- as.integer(repair_count[-1L])
+    known <- !is.na(x)
+    if (!any(known)) {
+      return(list(count = NA_integer_, total = NA_integer_, rate = NA_real_))
+    }
+    count <- as.integer(sum(x[known] == 0L))
+    total <- as.integer(sum(known))
+    list(count = count, total = total, rate = count / total)
+  }
   summarize_certification_log <- function(certification_log) {
     if (is.null(certification_log) || length(certification_log) == 0L) {
       return(list(cert_ok_count = NA_integer_, cert_total = NA_integer_))
@@ -277,7 +311,14 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     # Use single-bracket assignment so NULL remains an explicit named slot.
     results$H_seq[method_name] <- list(if (!is.null(fit$H_seq)) fit$H_seq else NULL)
 
-    n_sub_summary <- summarize_numeric(fit$n_sub)
+    returned_backend <- as.character(first_or(fit$returned_backend, NA_character_))
+    fallback_triggered <- if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered)
+    final_n_sub <- if (!is.null(fit$final_n_sub)) fit$final_n_sub else fit$n_sub
+    n_sub_summary <- summarize_numeric(final_n_sub)
+    first_n_sub_summary <- summarize_numeric_eval(fit$first_n_sub)
+    final_n_sub_summary <- summarize_numeric_eval(final_n_sub)
+    repair_count_summary <- summarize_numeric_eval(fit$repair_count)
+    first_pass <- first_pass_summary(fit$repair_count, returned_backend, fallback_triggered)
     cert_summary <- summarize_certification_log(fit$certification_log)
     results$method_metadata[[method_name]] <- list(
       h_used = if (!is.null(fit$h_used)) {
@@ -292,8 +333,8 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
       h_factor = as.numeric(first_or(config$h.factor, NA_real_)),
       min_subsample_size = as.integer(first_or(config$min_subsample_size, NA_integer_)),
       always_same_h_refit = isTRUE(config$always_same_h_refit),
-      returned_backend = as.character(first_or(fit$returned_backend, NA_character_)),
-      fallback_triggered = if (is.null(fit$fallback_triggered)) NA else isTRUE(fit$fallback_triggered),
+      returned_backend = returned_backend,
+      fallback_triggered = fallback_triggered,
       fallback_reason = as.character(first_or(fit$fallback_reason, NA_character_)),
       failure_reason = as.character(first_or(fit$failure_reason, NA_character_)),
       cert_fail_detected = if (is.null(fit$cert_fail_detected)) NA else isTRUE(fit$cert_fail_detected),
@@ -304,6 +345,21 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
       n_sub_min = n_sub_summary$min,
       n_sub_max = n_sub_summary$max,
       n_sub_mean = n_sub_summary$mean,
+      first_n_sub = int_vec_or_null(fit$first_n_sub),
+      repair_count = int_vec_or_null(fit$repair_count),
+      final_n_sub = int_vec_or_null(final_n_sub),
+      first_n_sub_min = first_n_sub_summary$min,
+      first_n_sub_max = first_n_sub_summary$max,
+      first_n_sub_mean = first_n_sub_summary$mean,
+      final_n_sub_min = final_n_sub_summary$min,
+      final_n_sub_max = final_n_sub_summary$max,
+      final_n_sub_mean = final_n_sub_summary$mean,
+      repair_count_min = repair_count_summary$min,
+      repair_count_max = repair_count_summary$max,
+      repair_count_mean = repair_count_summary$mean,
+      first_pass_count = first_pass$count,
+      first_pass_total = first_pass$total,
+      first_pass_rate = first_pass$rate,
       same_h_refit_attempted_count = sum_compact_count(fit$same_h_refit_attempted),
       same_h_refit_recovered_count = sum_compact_count(fit$same_h_refit_recovered),
       cert_ok_count = cert_summary$cert_ok_count,
