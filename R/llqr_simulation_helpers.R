@@ -89,37 +89,6 @@ complete_llqr_sim_config <- function(config) {
   config
 }
 
-run_llqr_direct_local_fit <- function(x, y, tau, z = NULL, h, case = 1) {
-  x <- as.vector(x)
-  y <- as.vector(y)
-  if (is.null(z)) {
-    z <- x
-  }
-  z <- as.vector(z)
-
-  ll_est <- numeric(length(z))
-  d_ll_est <- numeric(length(z))
-  A <- cbind(1, x)
-  for (i in seq_along(z)) {
-    eva_z <- z[i] - x
-    w <- llqr_kernel_weights(eva_z / h, case = case)
-    active <- w > 0
-    if (sum(active) < 2L || qr(A[active, , drop = FALSE])$rank < 2L) {
-      stop("Singular design matrix in direct LLQR local fit.")
-    }
-    fit <- quantreg::rq.wfit(
-      x = A[active, , drop = FALSE],
-      y = y[active],
-      weights = w[active],
-      tau = tau
-    )
-    ll_est[i] <- fit$coef[1] + z[i] * fit$coef[2]
-    d_ll_est[i] <- fit$coef[2]
-  }
-
-  list(ll_est = ll_est, d_ll_est = d_ll_est, h = h)
-}
-
 run_llqr_baseline_with_retry <- function(x, y, config) {
   case <- llqr_validate_case(config$case)
   h.factor <- if (is.null(config$h.factor)) 1 else config$h.factor
@@ -132,8 +101,8 @@ run_llqr_baseline_with_retry <- function(x, y, config) {
     case = case,
     h.factor = h.factor
   )
-  fit <- run_llqr_direct_local_fit(x = x, y = y, tau = config$tau, z = config$z,
-                                   h = base_h, case = case)
+  fit <- llqr_local_fit(x = x, y = y, tau = config$tau, z = config$z,
+                        h = base_h, case = case)
   fit$h <- base_h
   fit$h_used <- base_h
   fit$h_retry_factor <- 1

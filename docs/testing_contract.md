@@ -2,6 +2,8 @@
 
 This project compares screened ppro solvers against stable direct and sequential baselines for LLQR and TVCQR. The current regression focus is H-sequence agreement with the corresponding stable seq solver.
 
+The LLQR simulation baseline uses `llqr_local_fit`. For `case = 1`, it aligns with `quantdr::llqr` under the same bandwidth `h`; for `case = 2`, it uses the Epanechnikov kernel with default bandwidth `h.factor * n^(-0.2)`.
+
 ## Scope
 
 This document defines how solver behavior is validated and reported.

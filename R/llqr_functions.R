@@ -111,6 +111,48 @@ llqr_default_bandwidth <- function(x, y, tau, h = NULL, case = 1, h.factor = 1) 
   as.numeric(h_val)
 }
 
+llqr_local_fit <- function(x, y, tau = 0.5, z = NULL, h = NULL,
+                           case = 1, h.factor = 1, method = "br") {
+  case <- llqr_validate_case(case)
+  h.factor <- llqr_validate_h_factor(h.factor)
+  if (!is.character(method) || length(method) != 1L || is.na(method) || !nzchar(method)) {
+    stop("method must be a non-empty character scalar.")
+  }
+
+  x <- as.vector(x)
+  y <- as.vector(y)
+  if (is.null(z)) {
+    z <- x
+  }
+  z <- as.vector(z)
+
+  h <- llqr_default_bandwidth(x = x, y = y, tau = tau, h = h,
+                              case = case, h.factor = h.factor)
+
+  ll_est <- numeric(length(z))
+  d_ll_est <- numeric(length(z))
+  A <- cbind(1, x)
+  for (i in seq_along(z)) {
+    eva_z <- z[i] - x
+    w <- llqr_kernel_weights(eva_z / h, case = case)
+    active <- w > 0
+    if (sum(active) < 2L || qr(A[active, , drop = FALSE])$rank < 2L) {
+      stop("Singular design matrix in direct LLQR local fit.")
+    }
+    fit <- quantreg::rq.wfit(
+      x = A[active, , drop = FALSE],
+      y = y[active],
+      weights = w[active],
+      tau = tau,
+      method = method
+    )
+    ll_est[i] <- fit$coef[1] + z[i] * fit$coef[2]
+    d_ll_est[i] <- fit$coef[2]
+  }
+
+  list(ll_est = ll_est, d_ll_est = d_ll_est, h = h)
+}
+
 llqr_threshold_scale <- function(m, case = 1) {
   case <- llqr_validate_case(case)
   if (case == 1L) {
