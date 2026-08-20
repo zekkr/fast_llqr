@@ -65,6 +65,8 @@ bland     <- as_bool("FASTQR_BLAND", FALSE)
 track_order <- as_bool("FASTQR_TRACK_ORDER", TRUE)
 seed_base <- as_int("FASTQR_SEED_BASE", 2026)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
+run_tag <- Sys.getenv("FASTQR_RUN_TAG", unset = "")
+llqr_base_dir <- Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
 min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
@@ -92,17 +94,21 @@ config <- list(
   seed_base = seed_base,
   min_subsample_size = min_subsample_size,
   threshold_lower_bound = threshold_lower_bound,
-  threshold_scale_mode = threshold_scale_mode
+  threshold_scale_mode = threshold_scale_mode,
+  run_tag = run_tag,
+  llqr_base_dir = llqr_base_dir
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
-partial_dir <- file.path("data/llqr_simu_results", ".array_tmp",
+partial_dir <- file.path(llqr_base_dir, ".array_tmp",
                          sprintf("case%d_%s_n%d_rep%d", case, tau_str, n, num_rep))
-dir.create("data/llqr_simu_results", recursive = TRUE, showWarnings = FALSE)
+dir.create(llqr_base_dir, recursive = TRUE, showWarnings = FALSE)
 
 cat("=== LLQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
 cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
+cat(sprintf("run_tag=%s\n", if (nzchar(run_tag)) run_tag else "<none>"))
+cat(sprintf("llqr_base_dir=%s\n", llqr_base_dir))
 cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n")
 cat("threshold_lower_bound:", threshold_lower_bound, "\n")
 cat("threshold_scale_mode:", threshold_scale_mode, "\n\n")
@@ -117,9 +123,11 @@ timing_matrix <- matrix(NA_real_, nrow = num_rep, ncol = num_methods,
 estimates_list <- setNames(vector("list", num_methods), method_names)
 H_seq_list     <- if (include_h_seq) setNames(vector("list", num_methods), method_names) else NULL
 method_metadata <- setNames(vector("list", num_methods), method_names)
+exact_zero_audit <- setNames(vector("list", num_methods), method_names)
 for (m in method_names) {
   estimates_list[[m]] <- vector("list", num_rep)
   method_metadata[[m]] <- vector("list", num_rep)
+  exact_zero_audit[[m]] <- vector("list", num_rep)
   if (include_h_seq) {
     H_seq_list[[m]] <- vector("list", num_rep)
   }
@@ -155,6 +163,7 @@ for (rep_id in 1:num_rep) {
   for (m in method_names) {
     estimates_list[[m]][[rep_id]] <- pr$estimates_list[[m]][[1]]
     method_metadata[[m]][rep_id] <- list(if (!is.null(pr$method_metadata)) pr$method_metadata[[m]] else NULL)
+    exact_zero_audit[[m]][rep_id] <- list(if (!is.null(pr$exact_zero_audit)) pr$exact_zero_audit[[m]] else NULL)
     if (include_h_seq) {
       H_seq_list[[m]][[rep_id]] <- if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL
     }
@@ -167,6 +176,7 @@ results <- list(
   estimates_list = estimates_list,
   method_metadata = method_metadata,
   method_metadata_list = method_metadata,
+  exact_zero_audit = exact_zero_audit,
   method_names = method_names,
   Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, Mm.factor),
   timestamp = Sys.time(),
@@ -176,7 +186,7 @@ if (include_h_seq) {
   results$H_seq_list <- H_seq_list
 }
 
-final_file <- file.path("data/llqr_simu_results",
+final_file <- file.path(llqr_base_dir,
                         sprintf("case%d_%s_n%d_rep%d.RData", case, tau_str, n, num_rep))
 save(results, file = final_file)
 

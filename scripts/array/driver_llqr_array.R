@@ -16,6 +16,7 @@ setup_file <- if (file.exists("scripts/setup_hpc.R")) {
 }
 
 source(setup_file)
+source("scripts/audit_llqr_exact_zero.R")
 
 as_int <- function(x, default) {
   x <- Sys.getenv(x, unset = NA_character_)
@@ -60,6 +61,12 @@ as_num_vec <- function(x, default) {
   if (is.na(x) || nchar(x) == 0) return(default)
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
+}
+as_chr_vec <- function(x, default = character()) {
+  x <- Sys.getenv(x, unset = NA_character_)
+  if (is.na(x) || nchar(x) == 0) return(default)
+  vals <- trimws(strsplit(x, ",", fixed = TRUE)[[1]])
+  unique(vals[nzchar(vals)])
 }
 as_optional_pos_int <- function(x) {
   raw <- trimws(Sys.getenv(x, unset = NA_character_))
@@ -157,6 +164,11 @@ max_seconds_per_rep <- as_int("FASTQR_MAX_SECONDS_PER_REP", 7200)
 timeout_fork_mode <- as_timeout_fork_mode("FASTQR_USE_TIMEOUT_FORK", "auto")
 parallel_backend <- as_parallel_backend("FASTQR_PARALLEL_BACKEND", "FORK")
 save_h_seq <- as_bool("FASTQR_SAVE_H_SEQ", TRUE)
+run_tag <- Sys.getenv("FASTQR_RUN_TAG", unset = "")
+llqr_base_dir <- Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
+exact_zero_audit <- as_bool("FASTQR_EXACT_ZERO_AUDIT", FALSE)
+exact_zero_methods <- as_chr_vec("FASTQR_EXACT_ZERO_METHODS", character())
+exact_zero_block_size <- as_int("FASTQR_EXACT_ZERO_BLOCK_SIZE", 128L)
 min_subsample_size <- as_optional_pos_int("FASTQR_MIN_SUBSAMPLE_SIZE")
 always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
@@ -165,6 +177,7 @@ require_pos_int(seed_base, "FASTQR_SEED_BASE")
 require_pos_int(max_attempts_per_rep, "FASTQR_MAX_ATTEMPTS_PER_REP")
 require_pos_int(retry_stride, "FASTQR_RETRY_STRIDE")
 require_pos_int(max_seconds_per_rep, "FASTQR_MAX_SECONDS_PER_REP")
+require_pos_int(exact_zero_block_size, "FASTQR_EXACT_ZERO_BLOCK_SIZE")
 if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
   stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
 }
@@ -208,11 +221,16 @@ config_base <- list(
   min_subsample_size = min_subsample_size,
   always_same_h_refit = always_same_h_refit,
   threshold_lower_bound = threshold_lower_bound,
-  threshold_scale_mode = threshold_scale_mode
+  threshold_scale_mode = threshold_scale_mode,
+  run_tag = run_tag,
+  llqr_base_dir = llqr_base_dir,
+  exact_zero_audit = exact_zero_audit,
+  exact_zero_methods = exact_zero_methods,
+  exact_zero_block_size = exact_zero_block_size
 )
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
-partial_dir <- file.path("data/llqr_simu_results", ".array_tmp",
+partial_dir <- file.path(llqr_base_dir, ".array_tmp",
                          sprintf("case%d_%s_n%d_rep%d", case, tau_str, n, num_rep))
 dir.create(partial_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -220,6 +238,8 @@ cat("=== LLQR ARRAY DRIVER ===\n")
 cat(sprintf("task_id=%d, ncores=%d, chunk_size=%d\n", task_id, ncores, chunk_size))
 cat(sprintf("case=%d, tau=%.2f, n=%d, num_rep=%d\n", case, tau, n, num_rep))
 cat(sprintf("project_dir=%s\n", PROJECT_DIR))
+cat(sprintf("run_tag=%s\n", if (nzchar(run_tag)) run_tag else "<none>"))
+cat(sprintf("llqr_base_dir=%s\n", llqr_base_dir))
 if (sparse_mode) {
   cat(sprintf("sparse rep positions: %d-%d of %d (len=%d)\n", rep_start, rep_end, total_rep_targets, length(rep_ids)))
   cat(sprintf("rep ids: %s\n", paste(utils::head(rep_ids, 20L), collapse = ",")))
@@ -242,6 +262,9 @@ cat("parallel_chunk_enabled:", parallel_chunk_enabled, "\n")
 cat("timeout_fork_mode:", timeout_fork_mode, "\n")
 cat("timeout_fork_enabled:", timeout_fork_enabled, "\n\n")
 cat("save_h_seq:", save_h_seq, "\n\n")
+cat("exact_zero_audit:", exact_zero_audit, "\n")
+cat("exact_zero_methods:", paste(exact_zero_methods, collapse = ","), "\n")
+cat("exact_zero_block_size:", exact_zero_block_size, "\n\n")
 
 if (length(rep_ids) == 0) {
   cat("No rep_ids assigned to this task. Exiting.\n")
@@ -250,6 +273,15 @@ if (length(rep_ids) == 0) {
 
 methods <- create_llqr_methods(config_base$Mm.factor)
 method_names <- names(methods)
+if (exact_zero_audit) {
+  missing_audit_methods <- setdiff(exact_zero_methods, method_names)
+  if (length(exact_zero_methods) == 0L) {
+    stop("FASTQR_EXACT_ZERO_AUDIT=1 requires FASTQR_EXACT_ZERO_METHODS.")
+  }
+  if (length(missing_audit_methods)) {
+    stop("Unknown FASTQR_EXACT_ZERO_METHODS: ", paste(missing_audit_methods, collapse = ", "))
+  }
+}
 
 run_rep_with_timeout <- function(rep_id, rep_config, methods, timeout_sec, use_timeout_fork) {
   if (.Platform$OS.type != "unix" || !isTRUE(use_timeout_fork)) {
@@ -295,12 +327,14 @@ run_one <- function(rep_id) {
       estimates_list <- setNames(vector("list", length(method_names)), method_names)
       H_seq_list     <- if (save_h_seq) setNames(vector("list", length(method_names)), method_names) else NULL
       method_metadata <- setNames(vector("list", length(method_names)), method_names)
+      exact_zero_results <- setNames(vector("list", length(method_names)), method_names)
       for (m in method_names) {
         estimates_list[[m]] <- list(rr$estimates[[m]])
         if (save_h_seq) {
           H_seq_list[[m]] <- list(rr$H_seq[[m]])
         }
         method_metadata[[m]] <- rr$method_metadata[[m]]
+        exact_zero_results[[m]] <- rr$exact_zero_audit[[m]]
       }
 
       llqr_meta <- rr$method_metadata[["llqr"]]
@@ -310,6 +344,7 @@ run_one <- function(rep_id) {
         timing_matrix = timing_matrix,
         estimates_list = estimates_list,
         method_metadata = method_metadata,
+        exact_zero_audit = exact_zero_results,
         method_names = method_names,
         Mm.factor_mapping = create_llqr_Mm_factor_mapping(method_names, config_base$Mm.factor),
         timestamp = Sys.time(),
@@ -384,6 +419,7 @@ if (parallel_chunk_enabled) {
   clusterEvalQ(cl, {
     setwd(PROJECT_DIR)
     source(setup_file)
+    source("scripts/audit_llqr_exact_zero.R")
     suppressPackageStartupMessages(library(microbenchmark))
     NULL
   })

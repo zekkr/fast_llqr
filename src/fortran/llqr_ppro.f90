@@ -122,7 +122,7 @@ end function max_array
 subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                              Mm_factor, case_int, bland_int, min_subsample_size_in, &
                              ll_est, d_ll_est, it_num, residual_est, H_mat, first_n_sub_out, &
-                             repair_count_out, final_n_sub_out, &
+                             repair_count_out, final_n_sub_out, init_mode_out, init_trigger_out, &
                              ierr, failed_eval, always_same_h_refit_int, &
                              threshold_lower_bound_int, threshold_scale_mode_int)
 
@@ -144,6 +144,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer, intent(out) :: first_n_sub_out(rounds)
     integer, intent(out) :: repair_count_out(rounds)
     integer, intent(out) :: final_n_sub_out(rounds)
+    integer, intent(out) :: init_mode_out(rounds)
+    integer, intent(out) :: init_trigger_out(rounds)
     integer, intent(out) :: ierr
     integer, intent(out) :: failed_eval
 
@@ -204,6 +206,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     logical :: h_map_ok
     logical :: cert_reject_return
     logical :: refit_recertified
+    logical :: use_independent_init, H_prev_valid
+    logical :: shifted_init_success, full_recovery_success
+    integer :: independent_trigger
+    double precision :: theta_prev(nvar+1)
 
     ! Z-sorting variables (CRITICAL FIX: match R's z-sorting behavior)
     double precision :: z_sorted(rounds)
@@ -215,6 +221,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     integer :: first_n_sub_sorted(rounds)
     integer :: repair_count_sorted(rounds)
     integer :: final_n_sub_sorted(rounds)
+    integer :: init_mode_sorted(rounds)
+    integer :: init_trigger_sorted(rounds)
 
     ! Warm start variables (for rd==2)
     double precision :: xh(nvar+1, nvar+1)
@@ -273,9 +281,13 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     first_n_sub_out = 0
     repair_count_out = 0
     final_n_sub_out = 0
+    init_mode_out = 0
+    init_trigger_out = 0
     first_n_sub_sorted = 0
     repair_count_sorted = 0
     final_n_sub_sorted = 0
+    init_mode_sorted = 0
+    init_trigger_sorted = 0
 
     if (threshold_scale_mode_int == 1) then
         threshold_scale = log(log(dble(m)))
@@ -445,6 +457,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
     first_n_sub_sorted(rd) = m
     repair_count_sorted(rd) = 0
     final_n_sub_sorted(rd) = m
+    init_mode_sorted(rd) = 0
+    init_trigger_sorted(rd) = 0
     first_n_sub_out(z_order(rd)) = m
     repair_count_out(z_order(rd)) = 0
     final_n_sub_out(z_order(rd)) = m
@@ -468,6 +482,10 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         iter_total = 0
         first_n_sub_recorded = .false.
         repair_count_sorted(rd) = 0
+        use_independent_init = .false.
+        independent_trigger = 0
+        init_mode_sorted(rd) = 1
+        init_trigger_sorted(rd) = 0
 
         ! Compute kernel weights for current z (USING SORTED Z!)
         n_active = 0
@@ -479,13 +497,22 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         end do
 
         ! BAD SIGNS OUTER LOOP: Keep trying until solution is good
-        do while (not_optimal)
+        attempt_loop: do while (not_optimal)
 
             ! ========================================================
             ! Step 1: Compute M threshold from previous residuals
             ! ========================================================
             r = residual_est_sorted(rd-1, :)
             H_prev = H_mat_sorted(rd-1, :)
+            if (.not. use_independent_init) then
+                call validate_previous_H(H_prev, H_prev_valid)
+                if (.not. H_prev_valid) then
+                    use_independent_init = .true.
+                    independent_trigger = 1
+                    init_mode_sorted(rd) = 2
+                    init_trigger_sorted(rd) = independent_trigger
+                end if
+            end if
             if (not_new_sl_sh) then
                 residual_scale = median_abs(r, m)
                 if (threshold_lower_bound) then
@@ -536,17 +563,15 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
             ! Previous-H rows are zero-cost basis padding when their current
             ! kernel weight is zero; keep them out of active screening counts.
-            do i = 1, nvar+1
-                if (H_prev(i) < 1 .or. H_prev(i) > m) then
-                    call set_failure(3)
-                    return
-                end if
-                if (sl(H_prev(i)) .or. sh(H_prev(i))) then
-                    sl(H_prev(i)) = .false.
-                    sh(H_prev(i)) = .false.
-                end if
-                not_jl_or_jh(H_prev(i)) = .true.
-            end do
+            if (.not. use_independent_init) then
+                do i = 1, nvar+1
+                    if (sl(H_prev(i)) .or. sh(H_prev(i))) then
+                        sl(H_prev(i)) = .false.
+                        sh(H_prev(i)) = .false.
+                    end if
+                    not_jl_or_jh(H_prev(i)) = .true.
+                end do
+            end if
 
             sum_w_sl = 0.0d0
             sum_w_sh = 0.0d0
@@ -578,8 +603,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         ! For rd>2, only aggregates are built; subsample rows are NOT rebuilt!
         ms = n_subsample
 
-        if (rd == 2) then
-            ! Copy subsample observations (ONLY for rd==2!)
+        if (rd == 2 .or. use_independent_init) then
+            ! Shifted independent initialization also needs raw retained rows.
             do i = 1, ms
                 do j = 1, nvar+1
                     gammaxs_temp(i, j) = A(idx_not_jl_or_jh(i), j)
@@ -646,9 +671,126 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         end if
 
         ! ========================================================
-        ! Step 3: Inverse-based warm start
+        ! Step 3: Independent or transported-basis initialization
         ! ========================================================
-        if (rd == 2) then
+        if (use_independent_init) then
+            if (.not. first_n_sub_recorded) then
+                first_n_sub_sorted(rd) = ms
+                first_n_sub_recorded = .true.
+            end if
+
+            theta_prev(2) = d_ll_est_sorted(rd - 1)
+            theta_prev(1) = ll_est_sorted(rd - 1) - theta_prev(2) * z_sorted(rd - 1)
+            call run_shifted_reduced_initialization(shifted_init_success)
+
+            if (.not. shifted_init_success) then
+                init_mode_sorted(rd) = 3
+                call run_full_active_recovery(full_recovery_success)
+                if (.not. full_recovery_success) then
+                    call set_failure(2)
+                    return
+                end if
+
+                ll_candidate = estimate(1) + estimate(2) * z_sorted(rd)
+                d_ll_candidate = estimate(2)
+                do i = 1, m
+                    r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                end do
+                if (always_same_h_refit) then
+                    call try_same_h_refit(refit_recertified)
+                    if (.not. refit_recertified) then
+                        do i = 1, m
+                            r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                        end do
+                    end if
+                end if
+                accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
+                if (.not. accept_subsample) then
+                    call set_failure(1)
+                    return
+                end if
+
+                ll_est_sorted(rd) = ll_candidate
+                d_ll_est_sorted(rd) = d_ll_candidate
+                it_num_sorted(rd) = iter_total
+                final_n_sub_sorted(rd) = m
+                final_n_sub_out(z_order(rd)) = m
+                H_mat_sorted(rd, :) = H_candidate
+                r = r_raw
+                do i = 1, nvar + 1
+                    r(H_candidate(i)) = 0.0d0
+                end do
+                residual_est_sorted(rd, :) = r
+                call store_current_cache()
+                not_optimal = .false.
+                cycle attempt_loop
+            end if
+
+            init_mode_sorted(rd) = 2
+            ll_candidate = estimate(1) + estimate(2) * z_sorted(rd)
+            d_ll_candidate = estimate(2)
+            do i = 1, m
+                r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+            end do
+
+            if (always_same_h_refit) then
+                call try_same_h_refit(refit_recertified)
+                if (.not. refit_recertified) then
+                    do i = 1, m
+                        r_raw(i) = y(i) - (A(i, 1) * estimate(1) + A(i, 2) * estimate(2))
+                    end do
+                end if
+            end if
+
+            n_bad_signs = 0
+            do i = 1, m
+                if ((sh(i) .and. r_raw(i) <= 0.0d0) .or. (sl(i) .and. r_raw(i) >= 0.0d0)) then
+                    n_bad_signs = n_bad_signs + 1
+                end if
+            end do
+
+            if (n_bad_signs > 0) then
+                call record_repair()
+                if (dble(n_bad_signs) > 0.1d0 * dble(ms)) then
+                    mmm = mmm * 2.0d0
+                    not_new_sl_sh = .true.
+                else
+                    do i = 1, m
+                        if (sh(i) .and. r_raw(i) <= 0.0d0) sh(i) = .false.
+                        if (sl(i) .and. r_raw(i) >= 0.0d0) sl(i) = .false.
+                    end do
+                    not_new_sl_sh = .false.
+                end if
+                cycle attempt_loop
+            end if
+
+            accept_subsample = certify_llqr_candidate(H_candidate, r_raw, A, m, nvar, res_tol)
+            if ((.not. accept_subsample) .and. (.not. always_same_h_refit)) then
+                call try_same_h_refit(refit_recertified)
+                if (refit_recertified) accept_subsample = .true.
+            end if
+            if (.not. accept_subsample) then
+                call handle_certification_reject(cert_reject_return)
+                if (cert_reject_return) return
+                cycle attempt_loop
+            end if
+
+            ll_est_sorted(rd) = ll_candidate
+            d_ll_est_sorted(rd) = d_ll_candidate
+            it_num_sorted(rd) = iter_total
+            final_n_sub_sorted(rd) = ms
+            final_n_sub_out(z_order(rd)) = ms
+            H_mat_sorted(rd, :) = H_candidate
+            r = r_raw
+            do i = 1, nvar + 1
+                r(H_candidate(i)) = 0.0d0
+            end do
+            residual_est_sorted(rd, :) = r
+            call store_current_cache()
+            not_optimal = .false.
+            cycle attempt_loop
+
+        else if (rd == 2) then
             ! Map H from previous round to subsample coordinates
             do i = 1, nvar+1
                 H_subsample(i) = 0
@@ -659,8 +801,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 end do
                 if (H_subsample(i) == 0) then
-                    call set_failure(3)
-                    return
+                    use_independent_init = .true.
+                    independent_trigger = 2
+                    init_mode_sorted(rd) = 2
+                    init_trigger_sorted(rd) = independent_trigger
+                    not_new_sl_sh = .true.
+                    cycle attempt_loop
                 end if
             end do
 
@@ -675,8 +821,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             call inv22(xh, xhinv, inv_success)
 
             if (.not. inv_success) then
-                call set_failure(4)
-                return
+                use_independent_init = .true.
+                independent_trigger = 3
+                init_mode_sorted(rd) = 2
+                init_trigger_sorted(rd) = independent_trigger
+                not_new_sl_sh = .true.
+                cycle attempt_loop
             end if
 
             ! Identify positive and negative residuals in subsample (excluding H)
@@ -1104,7 +1254,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             if (count(sl) > 0 .or. count(sh) > 0) then
                 n_bad_signs = 0
                 do i = 1, m
-                    if ((sh(i) .and. r_raw(i) < 0.0d0) .or. (sl(i) .and. r_raw(i) > 0.0d0)) then
+                    if ((sh(i) .and. r_raw(i) <= 0.0d0) .or. (sl(i) .and. r_raw(i) >= 0.0d0)) then
                         n_bad_signs = n_bad_signs + 1
                     end if
                 end do
@@ -1120,8 +1270,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     else
                         ! Few bad signs: remove them from sl/sh and retry
                         do i = 1, m
-                            if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
-                            if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                            if (sh(i) .and. r_raw(i) <= 0.0d0) sh(i) = .false.
+                            if (sl(i) .and. r_raw(i) >= 0.0d0) sl(i) = .false.
                         end do
                         not_new_sl_sh = .false.
                         ! Continue while loop - will rebuild with adjusted sl/sh
@@ -1139,8 +1289,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                             not_new_sl_sh = .true.
                         else
                             do i = 1, m
-                                if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
-                                if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                                if (sh(i) .and. r_raw(i) <= 0.0d0) sh(i) = .false.
+                                if (sl(i) .and. r_raw(i) >= 0.0d0) sl(i) = .false.
                             end do
                             not_new_sl_sh = .false.
                         end if
@@ -1211,8 +1361,12 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                     end if
                 end do
                 if (H_subsample(i) == 0) then
-                    call set_failure(3)
-                    return
+                    use_independent_init = .true.
+                    independent_trigger = 2
+                    init_mode_sorted(rd) = 2
+                    init_trigger_sorted(rd) = independent_trigger
+                    not_new_sl_sh = .true.
+                    cycle attempt_loop
                 end if
             end do
 
@@ -1784,7 +1938,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
             if (count(sl) > 0 .or. count(sh) > 0) then
                 n_bad_signs = 0
                 do i = 1, m
-                    if ((sh(i) .and. r_raw(i) < 0.0d0) .or. (sl(i) .and. r_raw(i) > 0.0d0)) then
+                    if ((sh(i) .and. r_raw(i) <= 0.0d0) .or. (sl(i) .and. r_raw(i) >= 0.0d0)) then
                         n_bad_signs = n_bad_signs + 1
                     end if
                 end do
@@ -1796,8 +1950,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                         not_new_sl_sh = .true.
                     else
                         do i = 1, m
-                            if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
-                            if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                            if (sh(i) .and. r_raw(i) <= 0.0d0) sh(i) = .false.
+                            if (sl(i) .and. r_raw(i) >= 0.0d0) sl(i) = .false.
                         end do
                         not_new_sl_sh = .false.
                     end if
@@ -1814,8 +1968,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
                             not_new_sl_sh = .true.
                         else
                             do i = 1, m
-                                if (sh(i) .and. r_raw(i) < 0.0d0) sh(i) = .false.
-                                if (sl(i) .and. r_raw(i) > 0.0d0) sl(i) = .false.
+                                if (sh(i) .and. r_raw(i) <= 0.0d0) sh(i) = .false.
+                                if (sl(i) .and. r_raw(i) >= 0.0d0) sl(i) = .false.
                             end do
                             not_new_sl_sh = .false.
                         end if
@@ -1866,7 +2020,7 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
 
         end if  ! rd == 2 or rd > 2
 
-        end do  ! while (not_optimal)
+        end do attempt_loop  ! while (not_optimal)
 
     end do  ! rd = 2, rounds
 
@@ -1882,6 +2036,8 @@ subroutine llqr_ppro_fortran(x, y, z, m, nvar, rounds, tau, h, tol, maxit, &
         first_n_sub_out(k) = first_n_sub_sorted(rd)
         repair_count_out(k) = repair_count_sorted(rd)
         final_n_sub_out(k) = final_n_sub_sorted(rd)
+        init_mode_out(k) = init_mode_sorted(rd)
+        init_trigger_out(k) = init_trigger_sorted(rd)
         do i = 1, m
             residual_est(k, i) = residual_est_sorted(rd, i)
         end do
@@ -1907,6 +2063,260 @@ contains
             llqr_kernel_weight = exp(-0.5d0 * u_val * u_val) / sqrt(2.0d0 * pi_val)
         end if
     end function llqr_kernel_weight
+
+    subroutine validate_previous_H(H_idx, valid)
+        implicit none
+        integer, intent(in) :: H_idx(nvar+1)
+        logical, intent(out) :: valid
+        integer :: vi, vj
+
+        valid = .true.
+        do vi = 1, nvar + 1
+            if (H_idx(vi) < 1 .or. H_idx(vi) > m) then
+                valid = .false.
+                return
+            end if
+            do vj = vi + 1, nvar + 1
+                if (H_idx(vi) == H_idx(vj)) then
+                    valid = .false.
+                    return
+                end if
+            end do
+        end do
+    end subroutine validate_previous_H
+
+    subroutine reorder_cold_tableau(theta_offset, n_individual, n_total, success)
+        implicit none
+        double precision, intent(in) :: theta_offset(nvar+1)
+        integer, intent(in) :: n_individual, n_total
+        logical, intent(out) :: success
+        double precision :: gx_tmp(m+1, nvar+1), bv_tmp(m+1)
+        integer :: IB_tmp(m+1)
+        logical :: fvr_tmp(m+1), used_row(m)
+        integer :: ci, cj, src, dest
+
+        success = .false.
+        used_row = .false.
+
+        ! Put coefficient-basic rows first and convert their shifted values
+        ! back to absolute coefficients. Aggregate rows are protected, so a
+        ! coefficient-basic row must be an individual row.
+        do ci = 1, nvar + 1
+            src = 0
+            do cj = 1, n_total
+                if (IBs(cj) == ci) then
+                    src = cj
+                    exit
+                end if
+            end do
+            if (src < 1 .or. src > n_individual) return
+            used_row(src) = .true.
+            do cj = 1, nvar + 1
+                gx_tmp(ci, cj) = gammaxs_simplex(src, cj)
+            end do
+            bv_tmp(ci) = bs_simplex(src) + theta_offset(ci)
+            IB_tmp(ci) = IBs(src)
+            fvr_tmp(ci) = freevarrows(src)
+        end do
+
+        dest = nvar + 1
+        do src = 1, n_individual
+            if (.not. used_row(src)) then
+                dest = dest + 1
+                do cj = 1, nvar + 1
+                    gx_tmp(dest, cj) = gammaxs_simplex(src, cj)
+                end do
+                bv_tmp(dest) = bs_simplex(src)
+                IB_tmp(dest) = IBs(src)
+                fvr_tmp(dest) = freevarrows(src)
+            end if
+        end do
+        do src = n_individual + 1, n_total
+            dest = dest + 1
+            do cj = 1, nvar + 1
+                gx_tmp(dest, cj) = gammaxs_simplex(src, cj)
+            end do
+            bv_tmp(dest) = bs_simplex(src)
+            IB_tmp(dest) = IBs(src)
+            fvr_tmp(dest) = freevarrows(src)
+        end do
+        if (dest /= n_total) return
+
+        do cj = 1, nvar + 1
+            gx_tmp(n_total + 1, cj) = gammaxs_simplex(n_total + 1, cj)
+        end do
+        bv_tmp(n_total + 1) = bs_simplex(n_total + 1)
+        IB_tmp(n_total + 1) = IBs(n_total + 1)
+        fvr_tmp(n_total + 1) = freevarrows(n_total + 1)
+
+        do ci = 1, n_total + 1
+            do cj = 1, nvar + 1
+                gammaxs_simplex(ci, cj) = gx_tmp(ci, cj)
+            end do
+            bs_simplex(ci) = bv_tmp(ci)
+            IBs(ci) = IB_tmp(ci)
+            freevarrows(ci) = fvr_tmp(ci)
+        end do
+        success = .true.
+    end subroutine reorder_cold_tableau
+
+    subroutine run_shifted_reduced_initialization(success)
+        implicit none
+        logical, intent(out) :: success
+        double precision :: shifted_rhs, delta_est(nvar+1)
+        integer :: si, sj, src, total_rows
+        logical :: reorder_success
+
+        success = .false.
+        total_rows = ms
+
+        do si = 1, total_rows
+            if (si <= n_subsample) then
+                src = si
+            else if (has_sl_agg .and. si == n_subsample + 1) then
+                src = m + 1
+            else
+                src = m + 2
+            end if
+
+            shifted_rhs = bs_temp(src)
+            do sj = 1, nvar + 1
+                shifted_rhs = shifted_rhs - gammaxs_temp(src, sj) * theta_prev(sj)
+            end do
+
+            if (shifted_rhs < 0.0d0) then
+                do sj = 1, nvar + 1
+                    gammaxs_simplex(si, sj) = -gammaxs_temp(src, sj)
+                end do
+                bs_simplex(si) = -shifted_rhs
+                IBs(si) = nvar + 1 + total_rows + si
+            else
+                do sj = 1, nvar + 1
+                    gammaxs_simplex(si, sj) = gammaxs_temp(src, sj)
+                end do
+                bs_simplex(si) = shifted_rhs
+                IBs(si) = nvar + 1 + si
+            end if
+            freevarrows(si) = (si > n_subsample)
+        end do
+
+        IBs(total_rows + 1) = 0
+        freevarrows(total_rows + 1) = .true.
+        bs_simplex(total_rows + 1) = 0.0d0
+        do sj = 1, nvar + 1
+            gammaxs_simplex(total_rows + 1, sj) = 0.0d0
+            do si = 1, total_rows
+                if (IBs(si) > nvar + 1 .and. IBs(si) <= nvar + 1 + total_rows) then
+                    gammaxs_simplex(total_rows + 1, sj) = gammaxs_simplex(total_rows + 1, sj) - &
+                        tau * ws(si) * gammaxs_simplex(si, sj)
+                else if (IBs(si) > nvar + 1 + total_rows) then
+                    gammaxs_simplex(total_rows + 1, sj) = gammaxs_simplex(total_rows + 1, sj) - &
+                        (1.0d0 - tau) * ws(si) * gammaxs_simplex(si, sj)
+                end if
+            end do
+        end do
+
+        do si = 1, nvar + 1
+            r1s(si) = si
+            r2s(si) = 0
+        end do
+        rr = 0.0d0
+
+        remaining = maxit - iter_total
+        if (remaining <= 0) return
+        call run_simplex_full_llqr(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, ws, &
+                                   m + 1, total_rows, nvar, tau, tol, remaining, bland, iter_attempt, &
+                                   no_pivot_flag, simplex_converged)
+        iter_total = iter_total + iter_attempt
+        if (no_pivot_flag .or. (.not. simplex_converged)) return
+
+        call extract_solution(gammaxs_simplex, bs_simplex, IBs, total_rows, nvar, delta_est, &
+                              u_subsample, v_subsample, r1s)
+        do si = 1, nvar + 1
+            estimate(si) = theta_prev(si) + delta_est(si)
+        end do
+
+        call map_candidate_H(h_map_ok, h_failure_code)
+        if (.not. h_map_ok) return
+
+        call reorder_cold_tableau(theta_prev, n_subsample, total_rows, reorder_success)
+        if (.not. reorder_success) return
+        success = .true.
+    end subroutine run_shifted_reduced_initialization
+
+    subroutine run_full_active_recovery(success)
+        implicit none
+        logical, intent(out) :: success
+        double precision :: zero_offset(nvar+1)
+        integer :: fi, fj
+        logical :: reorder_success
+
+        success = .false.
+        n_subsample = m
+        ms = m
+        has_sl_agg = .false.
+        has_sh_agg = .false.
+        sl = .false.
+        sh = .false.
+        do fi = 1, m
+            idx_not_jl_or_jh(fi) = fi
+            ws(fi) = w(fi)
+            if (y(fi) < 0.0d0) then
+                do fj = 1, nvar + 1
+                    gammaxs_simplex(fi, fj) = -A(fi, fj)
+                end do
+                bs_simplex(fi) = -y(fi)
+                IBs(fi) = nvar + 1 + m + fi
+            else
+                do fj = 1, nvar + 1
+                    gammaxs_simplex(fi, fj) = A(fi, fj)
+                end do
+                bs_simplex(fi) = y(fi)
+                IBs(fi) = nvar + 1 + fi
+            end if
+            freevarrows(fi) = .false.
+        end do
+
+        IBs(m + 1) = 0
+        freevarrows(m + 1) = .true.
+        bs_simplex(m + 1) = 0.0d0
+        do fj = 1, nvar + 1
+            gammaxs_simplex(m + 1, fj) = 0.0d0
+            do fi = 1, m
+                if (IBs(fi) > nvar + 1 .and. IBs(fi) <= nvar + 1 + m) then
+                    gammaxs_simplex(m + 1, fj) = gammaxs_simplex(m + 1, fj) - &
+                        tau * w(fi) * gammaxs_simplex(fi, fj)
+                else
+                    gammaxs_simplex(m + 1, fj) = gammaxs_simplex(m + 1, fj) - &
+                        (1.0d0 - tau) * w(fi) * gammaxs_simplex(fi, fj)
+                end if
+            end do
+        end do
+
+        do fi = 1, nvar + 1
+            r1s(fi) = fi
+            r2s(fi) = 0
+        end do
+        rr = 0.0d0
+
+        remaining = maxit - iter_total
+        if (remaining <= 0) return
+        call run_simplex_full_llqr(gammaxs_simplex, bs_simplex, IBs, freevarrows, r1s, r2s, rr, w, &
+                                   m + 1, m, nvar, tau, tol, remaining, bland, iter_attempt, &
+                                   no_pivot_flag, simplex_converged)
+        iter_total = iter_total + iter_attempt
+        if (no_pivot_flag .or. (.not. simplex_converged)) return
+
+        call extract_solution(gammaxs_simplex, bs_simplex, IBs, m, nvar, estimate, &
+                              u_subsample, v_subsample, r1s)
+        call map_candidate_H(h_map_ok, h_failure_code)
+        if (.not. h_map_ok) return
+
+        zero_offset = 0.0d0
+        call reorder_cold_tableau(zero_offset, m, m, reorder_success)
+        if (.not. reorder_success) return
+        success = .true.
+    end subroutine run_full_active_recovery
 
     logical function terminal_cert_failure()
         implicit none
@@ -2108,7 +2518,7 @@ contains
 
         n_bad_signs = 0
         do ri = 1, m
-            if ((sh(ri) .and. r_raw(ri) < 0.0d0) .or. (sl(ri) .and. r_raw(ri) > 0.0d0)) then
+            if ((sh(ri) .and. r_raw(ri) <= 0.0d0) .or. (sl(ri) .and. r_raw(ri) >= 0.0d0)) then
                 n_bad_signs = n_bad_signs + 1
             end if
         end do

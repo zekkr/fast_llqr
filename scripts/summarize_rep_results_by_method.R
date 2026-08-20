@@ -12,7 +12,8 @@ parse_args <- function(args) {
     ns = NULL,
     rep = NA_integer_,
     seed_base = NA_integer_,
-    out = NULL
+    out = NULL,
+    llqr_base_dir = Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
   )
 
   parse_csv_chr <- function(x) {
@@ -35,6 +36,7 @@ parse_args <- function(args) {
     if (key == "rep") cfg$rep <- as.integer(val)
     if (key == "seed-base") cfg$seed_base <- as.integer(val)
     if (key == "out") cfg$out <- val
+    if (key == "llqr-base-dir") cfg$llqr_base_dir <- val
   }
 
   cfg$models <- unique(cfg$models)
@@ -59,9 +61,9 @@ source_if_exists <- function(path) {
 
 tau_tag <- function(tau) sprintf("tau%02d", as.integer(round(tau * 100)))
 
-result_path <- function(model, case, tau, n, rep) {
+result_path <- function(model, case, tau, n, rep, llqr_base_dir) {
   data_dir <- if (model == "llqr") {
-    "data/llqr_simu_results"
+    llqr_base_dir
   } else {
     "data/tvcqr_simu_results"
   }
@@ -69,9 +71,9 @@ result_path <- function(model, case, tau, n, rep) {
                               case, tau_tag(tau), n, rep))
 }
 
-partial_dir_path <- function(model, case, tau, n, rep) {
+partial_dir_path <- function(model, case, tau, n, rep, llqr_base_dir) {
   data_dir <- if (model == "llqr") {
-    "data/llqr_simu_results"
+    llqr_base_dir
   } else {
     "data/tvcqr_simu_results"
   }
@@ -282,13 +284,14 @@ baseline_status <- function(results_obj, model, rep_limit) {
   list(ok = TRUE, status = "ok")
 }
 
-summarize_one_result <- function(model, case, tau, n, num_rep, seed_base, path) {
+summarize_one_result <- function(model, case, tau, n, num_rep, seed_base, path,
+                                 llqr_base_dir) {
   results_obj <- load_results_obj(path)
   methods <- all_method_names(results_obj)
   if (length(methods) == 0L) stop(sprintf("No methods found in %s", path))
 
   partial_status <- inspect_partial_status(
-    partial_dir_path(model, case, tau, n, num_rep),
+    partial_dir_path(model, case, tau, n, num_rep, llqr_base_dir),
     num_rep
   )
   base_status <- baseline_status(results_obj, model, num_rep)
@@ -372,7 +375,7 @@ main <- function() {
     for (case in cfg$cases) {
       for (tau in cfg$taus) {
         for (n in cfg$ns) {
-          path <- result_path(model, case, tau, n, cfg$rep)
+          path <- result_path(model, case, tau, n, cfg$rep, cfg$llqr_base_dir)
           if (!file.exists(path)) {
             missing_files <- c(missing_files, path)
             next
@@ -384,7 +387,8 @@ main <- function() {
             n = n,
             num_rep = cfg$rep,
             seed_base = cfg$seed_base,
-            path = path
+            path = path,
+            llqr_base_dir = cfg$llqr_base_dir
           )
         }
       }

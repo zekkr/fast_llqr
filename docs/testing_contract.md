@@ -71,6 +71,8 @@ Every table, timing summary, or regression report involving ppro must distinguis
 The repository currently includes these relevant scripts:
 
 - `scripts/check_hseq_set_match.R`: compares saved result files for row-wise set equality of `H_seq`.
+- `scripts/audit_llqr_exact_zero.R`: recomputes LLQR raw residuals and reports Theorem 2 next-window literal-zero diagnostics plus machine-scale sensitivity counts.
+- `scripts/summarize_llqr_rep500_exact_zero.R`: aggregates compact LLQR exact-zero diagnostics, initialization/recovery provenance, and paper-comparison warnings for a run-specific result directory.
 - `scripts/array/check_llqr_config_integrity.R`: checks LLQR partial array output for missing or failed replications.
 - `scripts/array/check_tvcqr_config_integrity.R`: checks TVCQR partial array output for missing or failed replications.
 - `scripts/array/scan_llqr_integrity.R`: scans LLQR array-output grids and writes rerun ID files.
@@ -112,10 +114,36 @@ Diagnostic scripts or debug-enabled solver calls should print or return at least
 - `fallback_triggered`
 - `fallback_reason`
 - `returned_backend`
+- `init_mode`
+- `init_trigger`
+- `independent_init_count`
+- `full_active_recovery_count`
 - `H_seq_ppro`
 - `H_seq_seq`
 
 When logs are large, store full vectors in a structured object and print only counts plus the first few indices.
+
+## LLQR exact-zero audit
+
+The Theorem 2 audit is diagnostic and must not change solver acceptance, repair,
+or recovery. Recompute raw residuals from `ll_est`, `d_ll_est`, the evaluation
+point, and the original `x` and `y`; do not count zeros in `residual_est`, because
+the LLQR implementation explicitly writes the reported interpolation-basis
+residuals as zero.
+
+The primary literal count at evaluation point `j` is over the next positive-weight
+window: observations with positive kernel weight at `z[j + 1]` whose raw residual
+under the fit at `z[j]` is exactly zero. The last evaluation point has no
+next-window count. Also report all-observation and current-window literal counts.
+Machine-scale counts for multipliers 10, 100, and 1000 must be labelled numerical
+sensitivity diagnostics, not strict theorem violations.
+
+Large LLQR array runs may enable the compact blockwise audit with
+`FASTQR_EXACT_ZERO_AUDIT`, select raw method names with
+`FASTQR_EXACT_ZERO_METHODS`, and set `FASTQR_EXACT_ZERO_BLOCK_SIZE`. The compact
+audit runs after the solver timing boundary and stores replication summaries plus
+literal-violation witness rows. `FASTQR_LLQR_BASE_DIR` and `FASTQR_RUN_TAG` isolate
+new array and merged outputs from previously reported simulations.
 
 ## Command Templates
 

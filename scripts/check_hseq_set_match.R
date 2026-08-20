@@ -20,7 +20,8 @@ parse_args <- function(args) {
     ns = NULL,
     rep = 1000L,
     output_dir = "results/table",
-    output_file = NULL
+    output_file = NULL,
+    llqr_base_dir = Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
   )
 
   parse_csv_chr <- function(x) {
@@ -43,6 +44,7 @@ parse_args <- function(args) {
     if (key == "rep") cfg$rep <- as.integer(val)
     if (key == "output_dir") cfg$output_dir <- val
     if (key == "output_file") cfg$output_file <- val
+    if (key == "llqr-base-dir") cfg$llqr_base_dir <- val
   }
 
   cfg$models <- unique(cfg$models)
@@ -189,7 +191,7 @@ select_methods <- function(model, method_names) {
 }
 
 check_model_files <- function(model, cfg) {
-  data_dir <- if (model == "llqr") "data/llqr_simu_results" else "data/tvcqr_simu_results"
+  data_dir <- if (model == "llqr") cfg$llqr_base_dir else "data/tvcqr_simu_results"
   files <- list.files(
     data_dir,
     pattern = sprintf("^case[0-9]+_tau[0-9]+_n[0-9]+_rep%d\\.RData$", cfg$rep),

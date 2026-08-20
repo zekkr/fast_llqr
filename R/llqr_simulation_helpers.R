@@ -64,6 +64,25 @@ complete_llqr_sim_config <- function(config) {
     config$threshold_scale_mode,
     default = "loglog"
   )
+  config$exact_zero_audit <- llqr_sim_bool(
+    config$exact_zero_audit,
+    default = FALSE,
+    name = "exact_zero_audit"
+  )
+  if (is.null(config$exact_zero_methods)) {
+    config$exact_zero_methods <- character()
+  } else {
+    config$exact_zero_methods <- unique(as.character(config$exact_zero_methods))
+    config$exact_zero_methods <- config$exact_zero_methods[nzchar(config$exact_zero_methods)]
+  }
+  if (is.null(config$exact_zero_block_size)) {
+    config$exact_zero_block_size <- 128L
+  }
+  config$exact_zero_block_size <- as.integer(config$exact_zero_block_size)
+  if (length(config$exact_zero_block_size) != 1L ||
+      is.na(config$exact_zero_block_size) || config$exact_zero_block_size <= 0L) {
+    stop("config$exact_zero_block_size must be a positive integer.")
+  }
   if (!config$threshold_lower_bound && !is.null(config$Mm.factor)) {
     mm_factor_numeric <- as.numeric(config$Mm.factor)
     if (length(mm_factor_numeric) == 0L ||
@@ -273,12 +292,14 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     estimates = vector("list", length(methods)),
     H_seq = vector("list", length(methods)),
     timing = numeric(length(methods)),
-    method_metadata = vector("list", length(methods))
+    method_metadata = vector("list", length(methods)),
+    exact_zero_audit = vector("list", length(methods))
   )
   names(results$estimates) <- names(methods)
   names(results$H_seq) <- names(methods)
   names(results$timing) <- names(methods)
   names(results$method_metadata) <- names(methods)
+  names(results$exact_zero_audit) <- names(methods)
   
   # Run each method
   for (method_name in names(methods)) {
@@ -327,6 +348,8 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
       failure_reason = as.character(first_or(fit$failure_reason, NA_character_)),
       first_failed_eval = as.integer(first_or(fit$first_failed_eval, NA_integer_)),
       backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_)),
+      independent_init_count = as.integer(first_or(fit$independent_init_count, NA_integer_)),
+      full_active_recovery_count = as.integer(first_or(fit$full_active_recovery_count, NA_integer_)),
       first_n_sub = int_vec_or_null(fit$first_n_sub),
       repair_count = int_vec_or_null(fit$repair_count),
       final_n_sub = int_vec_or_null(final_n_sub),
@@ -346,6 +369,28 @@ run_single_llqr_replication <- function(rep_id, config, methods) {
     
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean
+
+    if (isTRUE(config$exact_zero_audit) && method_name %in% config$exact_zero_methods) {
+      if (!exists("audit_llqr_exact_zero_compact", mode = "function")) {
+        stop("exact-zero audit requested, but audit_llqr_exact_zero_compact is not loaded.")
+      }
+      audit_z <- if (is.null(config$z)) x else config$z
+      results$exact_zero_audit[[method_name]] <- audit_llqr_exact_zero_compact(
+        x = x,
+        y = y,
+        z = audit_z,
+        h = fit$h,
+        fit = fit,
+        case = config$case,
+        metadata = list(
+          tau = config$tau,
+          seed = seed_used,
+          rep_id = rep_id,
+          method = method_name
+        ),
+        block_size = config$exact_zero_block_size
+      )
+    }
   }
 
   results$seed_used <- seed_used

@@ -382,7 +382,7 @@ llqr_seq <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxit = 1
       # freevarrow <- c(vector(mode = 'logical', m), T) # these variables cannot be non-basic variables
       # gammax[(m+1),] <- tau - c(cc[IB],0) %*% gammax
     }
-    
+
     j <- 0
     while (j<maxit) {
       # print(j)
@@ -651,8 +651,8 @@ llqr_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, Mm.factor = 1e-3,
       b <- fit$coef
       # r <- y - crossprod(t(xx), b)
       r <- y - xx %*% b
-      sh.bad <- (r < 0) & sh
-      sl.bad <- (r > 0) & sl
+      sh.bad <- (r <= 0) & sh
+      sl.bad <- (r >= 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
       if (bad.signs > 0) {
         if (bad.signs > 0.1 * ms) {
@@ -1516,8 +1516,8 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
       
       # Check signs of residuals
       r <- y - A %*% estimate
-      sh.bad <- (r < 0) & sh
-      sl.bad <- (r > 0) & sl
+      sh.bad <- (r <= 0) & sh
+      sl.bad <- (r >= 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
       H_candidate <- r1 - 1 - nvar
       H_candidate <- idx_not_jl_or_jh[H_candidate]
@@ -1566,8 +1566,8 @@ llqr_seq_ppro <- function(x, y, tau = 0.5, z = NULL, h = NULL, tol = 1e-14, maxi
               estimate <- estimate_refit
               r <- cert_refit$residual
               bs[1:(nvar + 1)] <- estimate_refit
-              sh.bad <- (r < 0) & sh
-              sl.bad <- (r > 0) & sl
+              sh.bad <- (r <= 0) & sh
+              sl.bad <- (r >= 0) & sl
               bad.signs <- sum(sh.bad | sl.bad)
               cert <- cert_refit
               refit_recovered <- bad.signs == 0
@@ -1946,6 +1946,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
                      first_n_sub = integer(rounds),
                      repair_count = integer(rounds),
                      final_n_sub = integer(rounds),
+                     init_mode = integer(rounds),
+                     init_trigger = integer(rounds),
                      ierr = integer(1),
                      failed_eval = integer(1),
                      always_same_h_refit_int = as.integer(isTRUE(always_same_h_refit)),
@@ -1962,6 +1964,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     first_n_sub = as.integer(result$first_n_sub),
     repair_count = as.integer(result$repair_count),
     final_n_sub = as.integer(result$final_n_sub),
+    init_mode = as.integer(result$init_mode),
+    init_trigger = as.integer(result$init_trigger),
     n_sub = as.integer(result$final_n_sub),
     z = z,
     ierr = as.integer(result$ierr),
@@ -1970,7 +1974,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
 
   make_return <- function(ll_est_value, d_ll_est_value, it_num_value, residual_est_value,
                           H_seq_value, first_n_sub_value, repair_count_value,
-                          final_n_sub_value, returned_backend,
+                          final_n_sub_value, init_mode_value, init_trigger_value,
+                          returned_backend,
                           first_failed_eval = NA_integer_, failure_reason = NULL,
                           failure_info = NULL, fallback_triggered = FALSE,
                           fallback_reason = NULL) {
@@ -1981,6 +1986,27 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       d_ll_est_out <- d_ll_est_out[order(original_order)]
     }
     residual_est_out <- if (isTRUE(store_residual)) residual_est_value else NULL
+    init_mode_value <- as.integer(init_mode_value)
+    init_trigger_value <- as.integer(init_trigger_value)
+
+    if (track_order) {
+      init_mode_value <- init_mode_value[order(original_order)]
+      init_trigger_value <- init_trigger_value[order(original_order)]
+    }
+    init_mode_labels <- c(
+      `0` = "first_point_full_cold",
+      `1` = "warm_H",
+      `2` = "shifted_independent",
+      `3` = "full_active_recovery"
+    )
+    init_trigger_labels <- c(
+      `0` = "none",
+      `1` = "invalid_previous_H",
+      `2` = "unmappable_previous_H",
+      `3` = "singular_previous_H"
+    )
+    init_mode_out <- unname(init_mode_labels[as.character(init_mode_value)])
+    init_trigger_out <- unname(init_trigger_labels[as.character(init_trigger_value)])
 
     list(
       ll_est = ll_est_out,
@@ -1994,6 +2020,10 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       repair_count = as.integer(repair_count_value),
       final_n_sub = as.integer(final_n_sub_value),
       n_sub = as.integer(final_n_sub_value),
+      init_mode = init_mode_out,
+      init_trigger = init_trigger_out,
+      independent_init_count = sum(init_mode_value == 2L, na.rm = TRUE),
+      full_active_recovery_count = sum(init_mode_value == 3L, na.rm = TRUE),
       acceptance_diagnostics = acceptance_diagnostics,
       certification_log = certification_log,
       round_debug = round_debug,
@@ -2019,6 +2049,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     first_n_sub_failed <- raw_backend$first_n_sub
     repair_count_failed <- raw_backend$repair_count
     final_n_sub_failed <- raw_backend$final_n_sub
+    init_mode_failed <- raw_backend$init_mode
+    init_trigger_failed <- raw_backend$init_trigger
     idx <- rd_start:rounds
     ll_est_failed[idx] <- NA_real_
     d_ll_est_failed[idx] <- NA_real_
@@ -2028,6 +2060,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     first_n_sub_failed[idx] <- NA_integer_
     repair_count_failed[idx] <- NA_integer_
     final_n_sub_failed[idx] <- NA_integer_
+    init_mode_failed[idx] <- NA_integer_
+    init_trigger_failed[idx] <- NA_integer_
     if (is.null(acceptance_diagnostics[[rd_start]])) {
       acceptance_diagnostics[[rd_start]] <<- list(
         round = as.integer(rd_start),
@@ -2049,6 +2083,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       first_n_sub_value = first_n_sub_failed,
       repair_count_value = repair_count_failed,
       final_n_sub_value = final_n_sub_failed,
+      init_mode_value = init_mode_failed,
+      init_trigger_value = init_trigger_failed,
       returned_backend = "ppro_failed",
       first_failed_eval = as.integer(rd_start),
       failure_reason = reason,
@@ -2080,6 +2116,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
       first_n_sub_value = rep.int(m, rounds),
       repair_count_value = rep.int(NA_integer_, rounds),
       final_n_sub_value = rep.int(m, rounds),
+      init_mode_value = rep.int(NA_integer_, rounds),
+      init_trigger_value = rep.int(NA_integer_, rounds),
       returned_backend = "seq_fallback",
       first_failed_eval = as.integer(rd_start),
       failure_reason = failure_reason_arg,
@@ -2225,6 +2263,8 @@ llqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, z = NULL, h = NULL,
     first_n_sub_value = first_n_sub,
     repair_count_value = repair_count,
     final_n_sub_value = final_n_sub,
+    init_mode_value = raw_backend$init_mode,
+    init_trigger_value = raw_backend$init_trigger,
     returned_backend = "ppro"
   )
 }

@@ -57,7 +57,9 @@ For LLQR, `q = nvar + 1`, `A = cbind(1, x)`, the evaluation index is `rd`, and t
 
 The first evaluation point is solved on the full sample. After convergence, the solver stores the original observation indices of the zero-residual/interpolating rows in `H_seq`: LLQR uses `H <- r1 - 1 - nvar`, and TVCQR uses `H <- r1 - 2 - 2 * nvar`.
 
-For every later evaluation point, including LLQR `rd == 2`, the solver starts from the screened subsample. It uses `r_prev` and the current active set `w > 0` to build `M`, `sl <- active & r < -M`, `sh <- active & r > M`, and `not_jl_or_jh <- active & !(sl | sh)`. Previous basis rows are forced back into the retained subsample before aggregate rows are built. In code, `H <- match(H_seq[previous, ], idx_not_jl_or_jh)` maps original `H_seq` indices into current subsample row positions.
+For every later evaluation point, including LLQR `rd == 2`, the solver starts from the screened subsample. It uses `r_prev` and the current active set `w > 0` to build `M`, `sl <- active & r < -M`, `sh <- active & r > M`, and `not_jl_or_jh <- active & !(sl | sh)`. A valid previous basis is forced back into the retained subsample before aggregate rows are built. In code, `H <- match(H_seq[previous, ], idx_not_jl_or_jh)` maps original `H_seq` indices into current subsample row positions.
+
+LLQR has one exception to basis transport. If the previous interpolation basis is invalid, cannot be mapped to the current retained individual rows, or has a singular `q` by `q` design block, the solver keeps the same primal starting point but constructs a fresh basis. It sets `delta = beta - beta_prev`, starts at `delta = 0`, and chooses the individual `u` or `v` slack from the current shifted residual sign. Sure-negative and sure-positive aggregate rows use protected `v_L` and `u_H` basic variables, respectively, and cannot enter the new interpolation basis. After solving, the solver restores `beta = beta_prev + delta` and stores the warm-start state in absolute coordinates. If this shifted reduced initialization itself fails, the current evaluation point uses an explicitly recorded full-active cold-start recovery; it does not silently call the sequential solver.
 
 Low aggregate rows from `sl` are built from `glob.wx = colSums(A[sl, ] * w[sl])` and `glob.wy = sum(y[sl] * w[sl])`. High aggregate rows from `sh` are built from `ghib.wx = colSums(A[sh, ] * w[sh])` and `ghib.wy = sum(y[sh] * w[sh])`. Aggregate rows append `ws <- c(ws, 1)` because the original kernel weights have already been folded into aggregate `A` and `y`.
 
@@ -101,15 +103,15 @@ For LLQR `rd == 2`, the solver must use the screened subsample and aggregate row
 
 `S`: The uncertain set solved explicitly in the reduced LP. It contains observations near the fitted quantile, observations whose sign is not certified by the screening threshold, any bad signs added after verification, and all previous H/basis observations.
 
-Bad signs: Omitted observations whose residual sign under the reduced solution disagrees with their assigned sure-negative or sure-positive class, or otherwise violates the sign certificate used to aggregate them.
+Bad signs: Omitted observations that violate the strict sign certificate used by an aggregate. For LLQR, a sure-positive observation is bad when its full raw residual is less than or equal to zero, and a sure-negative observation is bad when its full raw residual is greater than or equal to zero. Thus an exact zero in an aggregate group fails verification.
 
-H/basis observations: The observations represented by the active simplex basis/H sequence. Previous H observations must be forced into `S` before solving the next reduced problem, because dropping them can break warm-start validity and cause `H_seq` mismatches.
+H/basis observations: The observations represented by the active simplex basis/H sequence. A valid previous H must be forced into `S` before solving the next reduced problem, because dropping it can break warm-start validity and cause `H_seq` mismatches. The LLQR shifted-initialization exception above applies only when that basis is unusable and a fresh basis is constructed at the same primal starting point.
 
 Weighted aggregates: Current-evaluation pseudo-observations representing the exact objective contribution of omitted `sl` and `sh` observations conditional on their certified signs. Aggregates must be rebuilt whenever the evaluation point, weights, `sl`, `sh`, `S`, threshold, or bad-sign set changes.
 
 Reduced LP: The simplex problem containing explicit rows for `S` plus aggregate rows for omitted certified signs. It is a computational shortcut, not a different estimator.
 
-Verification: The post-solve check over all omitted observations. Verification decides whether the reduced solution is certifiable as the full-sample solution.
+Verification: The post-solve check over all omitted observations. Verification decides whether the reduced solution is certifiable as the full-sample solution. For LLQR aggregate groups the check is strict: `sh & (r_raw <= 0)` and `sl & (r_raw >= 0)` are bad signs. This finite-sample verification rule is separate from any diagnostic count of exact-zero residuals across evaluation windows.
 
 ## Bounded-kernel local LP degeneracy
 
