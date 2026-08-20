@@ -13,7 +13,8 @@ parse_args <- function(args) {
     rep = NA_integer_,
     seed_base = NA_integer_,
     out = NULL,
-    llqr_base_dir = Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results")
+    llqr_base_dir = Sys.getenv("FASTQR_LLQR_BASE_DIR", unset = "data/llqr_simu_results"),
+    tvcqr_base_dir = Sys.getenv("FASTQR_TVCQR_BASE_DIR", unset = "data/tvcqr_simu_results")
   )
 
   parse_csv_chr <- function(x) {
@@ -37,6 +38,7 @@ parse_args <- function(args) {
     if (key == "seed-base") cfg$seed_base <- as.integer(val)
     if (key == "out") cfg$out <- val
     if (key == "llqr-base-dir") cfg$llqr_base_dir <- val
+    if (key == "tvcqr-base-dir") cfg$tvcqr_base_dir <- val
   }
 
   cfg$models <- unique(cfg$models)
@@ -61,21 +63,21 @@ source_if_exists <- function(path) {
 
 tau_tag <- function(tau) sprintf("tau%02d", as.integer(round(tau * 100)))
 
-result_path <- function(model, case, tau, n, rep, llqr_base_dir) {
+result_path <- function(model, case, tau, n, rep, llqr_base_dir, tvcqr_base_dir) {
   data_dir <- if (model == "llqr") {
     llqr_base_dir
   } else {
-    "data/tvcqr_simu_results"
+    tvcqr_base_dir
   }
   file.path(data_dir, sprintf("case%d_%s_n%d_rep%d.RData",
                               case, tau_tag(tau), n, rep))
 }
 
-partial_dir_path <- function(model, case, tau, n, rep, llqr_base_dir) {
+partial_dir_path <- function(model, case, tau, n, rep, llqr_base_dir, tvcqr_base_dir) {
   data_dir <- if (model == "llqr") {
     llqr_base_dir
   } else {
-    "data/tvcqr_simu_results"
+    tvcqr_base_dir
   }
   file.path(data_dir, ".array_tmp",
             sprintf("case%d_%s_n%d_rep%d", case, tau_tag(tau), n, rep))
@@ -285,13 +287,13 @@ baseline_status <- function(results_obj, model, rep_limit) {
 }
 
 summarize_one_result <- function(model, case, tau, n, num_rep, seed_base, path,
-                                 llqr_base_dir) {
+                                 llqr_base_dir, tvcqr_base_dir) {
   results_obj <- load_results_obj(path)
   methods <- all_method_names(results_obj)
   if (length(methods) == 0L) stop(sprintf("No methods found in %s", path))
 
   partial_status <- inspect_partial_status(
-    partial_dir_path(model, case, tau, n, num_rep, llqr_base_dir),
+    partial_dir_path(model, case, tau, n, num_rep, llqr_base_dir, tvcqr_base_dir),
     num_rep
   )
   base_status <- baseline_status(results_obj, model, num_rep)
@@ -375,7 +377,9 @@ main <- function() {
     for (case in cfg$cases) {
       for (tau in cfg$taus) {
         for (n in cfg$ns) {
-          path <- result_path(model, case, tau, n, cfg$rep, cfg$llqr_base_dir)
+          path <- result_path(
+            model, case, tau, n, cfg$rep, cfg$llqr_base_dir, cfg$tvcqr_base_dir
+          )
           if (!file.exists(path)) {
             missing_files <- c(missing_files, path)
             next
@@ -388,7 +392,8 @@ main <- function() {
             num_rep = cfg$rep,
             seed_base = cfg$seed_base,
             path = path,
-            llqr_base_dir = cfg$llqr_base_dir
+            llqr_base_dir = cfg$llqr_base_dir,
+            tvcqr_base_dir = cfg$tvcqr_base_dir
           )
         }
       }

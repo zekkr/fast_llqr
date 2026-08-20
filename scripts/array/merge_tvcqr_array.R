@@ -38,6 +38,12 @@ as_num_vec <- function(x, default) {
   vals <- strsplit(x, ",", fixed = TRUE)[[1]]
   as.numeric(trimws(vals))
 }
+as_chr_vec <- function(x, default = character()) {
+  x <- Sys.getenv(x, unset = NA_character_)
+  if (is.na(x) || nchar(x) == 0) return(default)
+  vals <- trimws(strsplit(x, ",", fixed = TRUE)[[1]])
+  unique(vals[nzchar(vals)])
+}
 as_optional_nonneg_int <- function(x) {
   raw <- trimws(Sys.getenv(x, unset = NA_character_))
   if (is.na(raw) || nchar(raw) == 0 ||
@@ -69,8 +75,14 @@ burn_in   <- as_int("FASTQR_BURN_IN", 500)
 include_h_seq <- as_bool("FASTQR_MERGE_INCLUDE_H_SEQ", FALSE)
 progress_every <- as_int("FASTQR_MERGE_PROGRESS_EVERY", 50)
 min_subsample_size <- as_optional_nonneg_int("FASTQR_MIN_SUBSAMPLE_SIZE")
+always_same_h_refit <- as_bool("FASTQR_ALWAYS_SAME_H_REFIT", TRUE)
 threshold_lower_bound <- as_bool("FASTQR_THRESHOLD_LOWER_BOUND", TRUE)
 threshold_scale_mode <- as_threshold_scale_mode("FASTQR_THRESHOLD_SCALE_MODE", "loglog")
+run_tag <- Sys.getenv("FASTQR_RUN_TAG", unset = "")
+tvcqr_base_dir <- Sys.getenv("FASTQR_TVCQR_BASE_DIR", unset = "data/tvcqr_simu_results")
+exact_zero_audit_enabled <- as_bool("FASTQR_EXACT_ZERO_AUDIT", FALSE)
+exact_zero_methods <- as_chr_vec("FASTQR_EXACT_ZERO_METHODS", character())
+exact_zero_block_size <- as_int("FASTQR_EXACT_ZERO_BLOCK_SIZE", 128L)
 if (length(Mm.factor) == 0 || any(is.na(Mm.factor))) {
   stop("FASTQR_MM_FACTOR must be a comma-separated numeric list.")
 }
@@ -95,18 +107,26 @@ config <- list(
   J = J,
   burn_in = burn_in,
   min_subsample_size = min_subsample_size,
+  always_same_h_refit = always_same_h_refit,
   threshold_lower_bound = threshold_lower_bound,
-  threshold_scale_mode = threshold_scale_mode
+  threshold_scale_mode = threshold_scale_mode,
+  exact_zero_audit = exact_zero_audit_enabled,
+  exact_zero_methods = exact_zero_methods,
+  exact_zero_block_size = exact_zero_block_size,
+  run_tag = run_tag,
+  tvcqr_base_dir = tvcqr_base_dir
 )
 config <- complete_tvcqr_sim_config(config)
 
 tau_str <- sprintf("tau%02d", as.integer(round(tau * 100)))
-partial_dir <- file.path("data/tvcqr_simu_results", ".array_tmp",
+partial_dir <- file.path(tvcqr_base_dir, ".array_tmp",
                          sprintf("case%d_%s_n%d_rep%d", case, tau_str, n, num_rep))
-dir.create("data/tvcqr_simu_results", recursive = TRUE, showWarnings = FALSE)
+dir.create(tvcqr_base_dir, recursive = TRUE, showWarnings = FALSE)
 
 cat("=== TVCQR MERGE ===\n")
 cat(sprintf("partial_dir=%s\n", partial_dir))
+cat(sprintf("run_tag=%s\n", if (nzchar(run_tag)) run_tag else "<none>"))
+cat(sprintf("tvcqr_base_dir=%s\n", tvcqr_base_dir))
 cat(sprintf("case=%d (%s), tau=%.2f, n=%d, num_rep=%d\n",
             config$case, config$case_label, tau, n, num_rep))
 cat("min_subsample_size:", if (is.null(config$min_subsample_size)) "default" else config$min_subsample_size, "\n")
@@ -128,9 +148,11 @@ timing_matrix <- matrix(NA_real_, nrow = num_rep, ncol = num_methods,
 estimates_list <- setNames(vector("list", num_methods), method_names)
 H_seq_list     <- if (include_h_seq) setNames(vector("list", num_methods), method_names) else NULL
 method_metadata <- setNames(vector("list", num_methods), method_names)
+exact_zero_audit <- setNames(vector("list", num_methods), method_names)
 for (m in method_names) {
   estimates_list[[m]] <- vector("list", num_rep)
   method_metadata[[m]] <- vector("list", num_rep)
+  exact_zero_audit[[m]] <- vector("list", num_rep)
   if (include_h_seq) {
     H_seq_list[[m]] <- vector("list", num_rep)
   }
@@ -167,6 +189,7 @@ for (rep_id in 1:num_rep) {
   for (m in method_names) {
     estimates_list[[m]][[rep_id]] <- pr$estimates_list[[m]][[1]]
     method_metadata[[m]][rep_id] <- list(if (!is.null(pr$method_metadata)) pr$method_metadata[[m]] else NULL)
+    exact_zero_audit[[m]][rep_id] <- list(if (!is.null(pr$exact_zero_audit)) pr$exact_zero_audit[[m]] else NULL)
     if (include_h_seq) {
       H_seq_list[[m]][rep_id] <- list(if (!is.null(pr$H_seq_list)) pr$H_seq_list[[m]][[1]] else NULL)
     }
@@ -179,6 +202,7 @@ results <- list(
   estimates_list = estimates_list,
   method_metadata = method_metadata,
   method_metadata_list = method_metadata,
+  exact_zero_audit = exact_zero_audit,
   method_names = method_names,
   Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, Mm.factor),
   timestamp = Sys.time(),
@@ -191,7 +215,7 @@ if (include_h_seq) {
 }
 
 # Final filename consistent with your existing convention
-final_file <- file.path("data/tvcqr_simu_results",
+final_file <- file.path(tvcqr_base_dir,
                         sprintf("case%d_%s_n%d_rep%d.RData", case, tau_str, n, num_rep))
 save(results, file = final_file)
 

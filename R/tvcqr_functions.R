@@ -669,8 +669,8 @@ tvc_rq_ppro <- function (x, y, tau = 0.5, h = NULL, Mm.factor = 1e-4, pmethod = 
       b <- z$coef
       # r <- y - crossprod(t(xx), b)
       r <- y - xx %*% b
-      sh.bad <- (r < 0) & sh
-      sl.bad <- (r > 0) & sl
+      sh.bad <- (r <= 0) & sh
+      sl.bad <- (r >= 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
       if (bad.signs > 0) {
         if (bad.signs > 0.1 * ns) {
@@ -1445,8 +1445,8 @@ tvcqr_seq_ppro <- function(x, y, tau = 0.5, h = NULL, h.factor = 1, tol = 1e-14,
       } else {
         r <- y - A %*% estimate
       }
-      sh.bad <- (r < 0) & sh
-      sl.bad <- (r > 0) & sl
+      sh.bad <- (r <= 0) & sh
+      sl.bad <- (r >= 0) & sl
       bad.signs <- sum(sh.bad | sl.bad)
       H_candidate <- r1 - 2 - 2 * nvar
       H_candidate <- idx_not_jl_or_jh[H_candidate]
@@ -1709,6 +1709,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   first_n_sub <- integer(m)
   repair_count <- integer(m)
   final_n_sub <- integer(m)
+  init_mode <- integer(m)
+  init_trigger <- integer(m)
   H_seq <- matrix(0L, nrow = m, ncol = 2 * (nvar + 1))
   same_h_refit_attempted <- integer(m)
   same_h_refit_recovered <- integer(m)
@@ -1744,6 +1746,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
                      first_n_sub = as.integer(first_n_sub),
                      repair_count = as.integer(repair_count),
                      final_n_sub = as.integer(final_n_sub),
+                     init_mode = as.integer(init_mode),
+                     init_trigger = as.integer(init_trigger),
                      H_seq = as.integer(H_seq),
                      same_h_refit_attempted = as.integer(same_h_refit_attempted),
                      same_h_refit_recovered = as.integer(same_h_refit_recovered),
@@ -1758,7 +1762,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
 
   make_return <- function(theta_value, beta_full_value, it_value, residual_value, M_value,
                           first_n_sub_value, repair_count_value, final_n_sub_value,
-                          H_value, returned_backend, first_failed_eval = NA_integer_,
+                          init_mode_value, init_trigger_value, H_value, returned_backend,
+                          first_failed_eval = NA_integer_,
                           failure_reason = NULL, failure_info = NULL,
                           fallback_triggered = FALSE, fallback_reason = NULL) {
     failed_eval_value <- if (!is.na(first_failed_eval)) {
@@ -1766,6 +1771,22 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     } else {
       as.integer(result$failed_eval)
     }
+    init_mode_value <- as.integer(init_mode_value)
+    init_trigger_value <- as.integer(init_trigger_value)
+    init_mode_labels <- c(
+      `0` = "first_point_full_cold",
+      `1` = "warm_H",
+      `2` = "shifted_independent",
+      `3` = "full_active_recovery"
+    )
+    init_trigger_labels <- c(
+      `0` = "none",
+      `1` = "invalid_previous_H",
+      `2` = "unmappable_previous_H",
+      `3` = "singular_previous_H"
+    )
+    init_mode_out <- unname(init_mode_labels[as.character(init_mode_value)])
+    init_trigger_out <- unname(init_trigger_labels[as.character(init_trigger_value)])
     list(
       theta_ll_est = theta_value,
       beta_full_est = beta_full_value,
@@ -1776,6 +1797,10 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       repair_count = as.integer(repair_count_value),
       final_n_sub = as.integer(final_n_sub_value),
       n_sub = as.integer(final_n_sub_value),
+      init_mode = init_mode_out,
+      init_trigger = init_trigger_out,
+      independent_init_count = sum(init_mode_value == 2L, na.rm = TRUE),
+      full_active_recovery_count = sum(init_mode_value == 3L, na.rm = TRUE),
       H_seq = H_value,
       h = result$h,
       acceptance_diagnostics = acceptance_diagnostics,
@@ -1816,6 +1841,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       first_n_sub_value = rep.int(m, m),
       repair_count_value = rep.int(NA_integer_, m),
       final_n_sub_value = rep.int(m, m),
+      init_mode_value = rep.int(NA_integer_, m),
+      init_trigger_value = rep.int(NA_integer_, m),
       H_value = fallback_fit$H_seq,
       returned_backend = "seq_fallback",
       first_failed_eval = as.integer(t_start),
@@ -1860,7 +1887,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
   fail_ppro_suffix <- function(t_start, reason, info = NULL,
                                theta_value, beta_full_value, it_value, residual_value,
                                M_value, first_n_sub_value, repair_count_value,
-                               final_n_sub_value, H_value) {
+                               final_n_sub_value, init_mode_value, init_trigger_value,
+                               H_value) {
     idx <- t_start:m
     theta_value[idx, ] <- NA_real_
     beta_full_value[idx, ] <- NA_real_
@@ -1868,6 +1896,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     first_n_sub_value[idx] <- NA_integer_
     repair_count_value[idx] <- NA_integer_
     final_n_sub_value[idx] <- NA_integer_
+    init_mode_value[idx] <- NA_integer_
+    init_trigger_value[idx] <- NA_integer_
     H_value[idx, ] <- NA_integer_
     if (!is.null(residual_value)) {
       residual_value[idx, ] <- NA_real_
@@ -1888,6 +1918,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       first_n_sub_value = first_n_sub_value,
       repair_count_value = repair_count_value,
       final_n_sub_value = final_n_sub_value,
+      init_mode_value = init_mode_value,
+      init_trigger_value = init_trigger_value,
       H_value = H_value,
       returned_backend = "ppro_failed",
       first_failed_eval = as.integer(t_start),
@@ -1940,6 +1972,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
       first_n_sub_value = result$first_n_sub,
       repair_count_value = result$repair_count,
       final_n_sub_value = result$final_n_sub,
+      init_mode_value = result$init_mode,
+      init_trigger_value = result$init_trigger,
       H_value = H_seq
     ))
   }
@@ -2014,6 +2048,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
         first_n_sub_value = result$first_n_sub,
         repair_count_value = result$repair_count,
         final_n_sub_value = result$final_n_sub,
+        init_mode_value = result$init_mode,
+        init_trigger_value = result$init_trigger,
         H_value = H_seq
       ))
     }
@@ -2030,6 +2066,8 @@ tvcqr_seq_ppro_fortran_wrapper <- function(x, y, tau = 0.5, h = NULL, h.factor =
     first_n_sub_value = result$first_n_sub,
     repair_count_value = result$repair_count,
     final_n_sub_value = result$final_n_sub,
+    init_mode_value = result$init_mode,
+    init_trigger_value = result$init_trigger,
     H_value = H_seq,
     returned_backend = "ppro"
   ))

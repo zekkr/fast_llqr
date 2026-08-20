@@ -8,7 +8,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                                    bland_int, Mm_factor, eps, store_residual_int, debug_int, &
                                    theta_ll_est, beta_full_est, it_num, residual_est, &
                                    M_out, first_n_sub, repair_count, final_n_sub, &
-                                   H_seq, same_h_refit_attempted, &
+                                   init_mode, init_trigger, H_seq, same_h_refit_attempted, &
                                    same_h_refit_recovered, ierr, failed_eval, min_subsample_size_in, &
                                    always_same_h_refit_int, threshold_lower_bound_int, &
                                    threshold_scale_mode_int)
@@ -32,6 +32,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     integer, intent(out) :: first_n_sub(m)
     integer, intent(out) :: repair_count(m)
     integer, intent(out) :: final_n_sub(m)
+    integer, intent(out) :: init_mode(m)
+    integer, intent(out) :: init_trigger(m)
     integer, intent(out) :: H_seq(m, 2*(nvar+1))
     integer, intent(out) :: same_h_refit_attempted(m)
     integer, intent(out) :: same_h_refit_recovered(m)
@@ -89,6 +91,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision :: u(m), v(m), estimate(2*(nvar+1))
     double precision :: estimate_refit(2*(nvar+1)), r_refit(m)
     double precision :: r(m), r_prev(m)
+    double precision :: beta_prev(2*(nvar+1))
     double precision :: pivot_row(2*(nvar+1))
     
     integer :: i, j, k, t, eva_t, iter
@@ -118,6 +121,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     double precision :: temp_vec1(2*(nvar+1))
     integer :: ii, kk
     logical :: force_full_sample, accept_subsample, no_pivot_flag
+    logical :: use_independent_init, previous_H_valid, shifted_init_success
+    logical :: full_recovery_success
+    integer :: independent_trigger
     integer :: empty_pivot_count, max_empty_pivot_retries
     double precision :: res_tol
 
@@ -218,6 +224,8 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
     first_n_sub = 0
     repair_count = 0
     final_n_sub = 0
+    init_mode = 0
+    init_trigger = 0
     H_seq = 0
     same_h_refit_attempted = 0
     same_h_refit_recovered = 0
@@ -678,6 +686,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
         iter = 0  ! Initialize iteration counter here, outside preprocessing loop
         repair_count(eva_t) = 0
         first_n_sub_recorded = .false.
+        use_independent_init = .false.
+        independent_trigger = 0
+        init_mode(eva_t) = 1
+        init_trigger(eva_t) = 0
 
         preprocessing_attempts = 0
         do while (not_optimal)
@@ -703,6 +715,16 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             do i = 1, m
                 r(i) = r_prev(i)
             end do
+
+            if (.not. use_independent_init) then
+                call validate_previous_H(H_seq(eva_t-1, :), previous_H_valid)
+                if (.not. previous_H_valid) then
+                    use_independent_init = .true.
+                    independent_trigger = 1
+                    init_mode(eva_t) = 2
+                    init_trigger(eva_t) = independent_trigger
+                end if
+            end if
             
 
 
@@ -803,26 +825,14 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             ! Always force previous H observations into the retained subsample.
             ! Zero-weight previous-H rows are basis padding, not active screened rows.
-            do k = 1, 2*(nvar+1)
-                idx = H_seq(eva_t-1, k)
-                if (idx < 1 .or. idx > m) then
-                    if (force_full_sample) then
-                        call set_failure(3, eva_t)
-                        return
-                    end if
-                    empty_pivot_count = empty_pivot_count + 1
-                    call record_repair()
-                    mmm_thresh = 2.0d0 * mmm_thresh
-                    not_new_sl_sh = .true.
-                    if (empty_pivot_count >= max_empty_pivot_retries) then
-                        force_full_sample = .true.
-                    end if
-                    cycle
-                end if
-                sl(idx) = .false.
-                sh(idx) = .false.
-                not_jl_or_jh(idx) = .true.
-            end do
+            if (.not. use_independent_init) then
+                do k = 1, 2*(nvar+1)
+                    idx = H_seq(eva_t-1, k)
+                    sl(idx) = .false.
+                    sh(idx) = .false.
+                    not_jl_or_jh(idx) = .true.
+                end do
+            end if
 
             ! Recompute all counts and retained indices after force-H.
             n_sl = 0
@@ -882,7 +892,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
             
             ! Initialize for eva_t = 2
-            if (eva_t == 2) then
+            if (eva_t == 2 .or. use_independent_init) then
                 do i = 1, ms
                     do j = 1, 2*(nvar+1)
                         gammaxs_temp(i, j) = A(idx_not_jl_or_jh(i), j)
@@ -1024,23 +1034,53 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             end do
 
             ! Check if we have enough valid H observations
-            if (k < 2*(nvar+1)) then
+            if ((.not. use_independent_init) .and. k < 2*(nvar+1)) then
                 if (debug_active) then
                     write(6, *) 'WARNING: Only', k, 'valid H observations out of', 2*(nvar+1), &
                         'at eva_t=', eva_t
                 end if
-                if (force_full_sample) then
-                    call set_failure(3, eva_t)
-                    return
+                use_independent_init = .true.
+                independent_trigger = 2
+                init_mode(eva_t) = 2
+                init_trigger(eva_t) = independent_trigger
+            end if
+
+            if (.not. use_independent_init) then
+                call matrix_inverse_2p(A(H_seq(eva_t-1, :), :), xhinv, 2*(nvar+1), inv_info)
+                if (inv_info /= 0) then
+                    use_independent_init = .true.
+                    independent_trigger = 3
+                    init_mode(eva_t) = 2
+                    init_trigger(eva_t) = independent_trigger
                 end if
-                empty_pivot_count = empty_pivot_count + 1
-                call record_repair()
-                mmm_thresh = 2.0d0 * mmm_thresh
-                not_new_sl_sh = .true.
-                if (empty_pivot_count >= max_empty_pivot_retries) then
-                    force_full_sample = .true.
+            end if
+
+            if (use_independent_init) then
+                do i = 1, ms_org
+                    do j = 1, 2*(nvar+1)
+                        gammaxs_temp(i, j) = A(idx_not_jl_or_jh(i), j)
+                    end do
+                    bs_temp(i) = y(idx_not_jl_or_jh(i))
+                end do
+                do i = 1, 2*(nvar+1)
+                    beta_prev(i) = beta_full_est(eva_t-1, i)
+                end do
+                if (.not. first_n_sub_recorded) then
+                    first_n_sub(eva_t) = ms
+                    first_n_sub_recorded = .true.
                 end if
-                cycle
+                call run_fresh_initialization(beta_prev, ms_org, ms, shifted_init_success)
+                if (.not. shifted_init_success) then
+                    init_mode(eva_t) = 3
+                    call run_full_active_recovery(full_recovery_success)
+                    if (.not. full_recovery_success) then
+                        call set_failure(2, eva_t)
+                        return
+                    end if
+                end if
+                simplex_converged = .true.
+                no_pivot_flag = .false.
+                goto 24430
             end if
 
             ! CRITICAL: Reset freevarrow for EVERY preprocessing attempt
@@ -2195,9 +2235,9 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
                 ! Step 4: Get pivot column
                 if (tsep == 1) then
-                    yy(1:ms+1) = gammaxs(:, t_rr)
+                    yy(1:ms+1) = gammaxs(1:ms+1, t_rr)
                 else
-                    yy(1:ms+1) = -gammaxs(:, t_rr)
+                    yy(1:ms+1) = -gammaxs(1:ms+1, t_rr)
                 end if
                 
 
@@ -2441,6 +2481,7 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                 cycle
             end if
 
+24430       continue
             do i = 1, 2*(nvar+1)
                 estimate(i) = bs(i)
             end do
@@ -2490,10 +2531,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
             n_sure_signs = n_sl + n_sh  ! Total sure-sign observations
 
             do i = 1, m
-                if ((r(i) < 0.0d0) .and. sh(i)) then
+                if ((r(i) <= 0.0d0) .and. sh(i)) then
                     bad_signs = bad_signs + 1
                 end if
-                if ((r(i) > 0.0d0) .and. sl(i)) then
+                if ((r(i) >= 0.0d0) .and. sl(i)) then
                     bad_signs = bad_signs + 1
                 end if
             end do
@@ -2523,10 +2564,10 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
                             refit_used = .true.
                             bad_signs = 0
                             do i = 1, m
-                                if ((r(i) < 0.0d0) .and. sh(i)) then
+                                if ((r(i) <= 0.0d0) .and. sh(i)) then
                                     bad_signs = bad_signs + 1
                                 end if
-                                if ((r(i) > 0.0d0) .and. sl(i)) then
+                                if ((r(i) >= 0.0d0) .and. sl(i)) then
                                     bad_signs = bad_signs + 1
                                 end if
                             end do
@@ -2736,6 +2777,421 @@ subroutine tvcqr_seq_ppro_fortran(x, y, m, nvar, tau, h, h_factor, tol, maxit, &
 
 contains
 
+    subroutine validate_previous_H(H_idx, valid)
+        implicit none
+        integer, intent(in) :: H_idx(2*(nvar+1))
+        logical, intent(out) :: valid
+        integer :: vi, vj
+
+        valid = .true.
+        do vi = 1, 2*(nvar+1)
+            if (H_idx(vi) < 1 .or. H_idx(vi) > m) then
+                valid = .false.
+                return
+            end if
+            do vj = vi + 1, 2*(nvar+1)
+                if (H_idx(vi) == H_idx(vj)) then
+                    valid = .false.
+                    return
+                end if
+            end do
+        end do
+    end subroutine validate_previous_H
+
+    subroutine reorder_fresh_tableau(theta_offset, n_individual, n_total, success)
+        implicit none
+        double precision, intent(in) :: theta_offset(2*(nvar+1))
+        integer, intent(in) :: n_individual, n_total
+        logical, intent(out) :: success
+        double precision :: gx_tmp(m+3, 2*(nvar+1)), bv_tmp(m+3)
+        integer :: IB_tmp(m+3)
+        logical :: fvr_tmp(m+3), used_row(m+2)
+        integer :: ci, cj, src, dest, qdim
+
+        success = .false.
+        qdim = 2*(nvar+1)
+        used_row = .false.
+
+        do ci = 1, qdim
+            src = 0
+            do cj = 1, n_total
+                if (IBs(cj) == ci) then
+                    src = cj
+                    exit
+                end if
+            end do
+            if (src < 1 .or. src > n_individual) return
+            used_row(src) = .true.
+            do cj = 1, qdim
+                gx_tmp(ci, cj) = gammaxs(src, cj)
+            end do
+            bv_tmp(ci) = bs(src) + theta_offset(ci)
+            IB_tmp(ci) = IBs(src)
+            fvr_tmp(ci) = freevarrow(src)
+        end do
+
+        dest = qdim
+        do src = 1, n_individual
+            if (.not. used_row(src)) then
+                dest = dest + 1
+                do cj = 1, qdim
+                    gx_tmp(dest, cj) = gammaxs(src, cj)
+                end do
+                bv_tmp(dest) = bs(src)
+                IB_tmp(dest) = IBs(src)
+                fvr_tmp(dest) = freevarrow(src)
+            end if
+        end do
+        do src = n_individual + 1, n_total
+            dest = dest + 1
+            do cj = 1, qdim
+                gx_tmp(dest, cj) = gammaxs(src, cj)
+            end do
+            bv_tmp(dest) = bs(src)
+            IB_tmp(dest) = IBs(src)
+            fvr_tmp(dest) = freevarrow(src)
+        end do
+        if (dest /= n_total) return
+
+        do cj = 1, qdim
+            gx_tmp(n_total + 1, cj) = gammaxs(n_total + 1, cj)
+        end do
+        bv_tmp(n_total + 1) = bs(n_total + 1)
+        IB_tmp(n_total + 1) = IBs(n_total + 1)
+        fvr_tmp(n_total + 1) = freevarrow(n_total + 1)
+
+        do ci = 1, n_total + 1
+            do cj = 1, qdim
+                gammaxs(ci, cj) = gx_tmp(ci, cj)
+            end do
+            bs(ci) = bv_tmp(ci)
+            IBs(ci) = IB_tmp(ci)
+            freevarrow(ci) = fvr_tmp(ci)
+        end do
+        success = .true.
+    end subroutine reorder_fresh_tableau
+
+    subroutine run_fresh_initialization(theta_offset, n_individual, n_total, success)
+        implicit none
+        double precision, intent(in) :: theta_offset(2*(nvar+1))
+        integer, intent(in) :: n_individual, n_total
+        logical, intent(out) :: success
+        double precision :: shifted_rhs, delta_est(2*(nvar+1))
+        integer :: si, sj, src, qdim, reduced_idx, iter_fresh, remaining
+        logical :: no_pivot_fresh, converged_fresh, reorder_ok
+
+        success = .false.
+        qdim = 2*(nvar+1)
+        if (n_individual < qdim .or. n_total < n_individual .or. n_total > m + 2) return
+
+        do si = 1, n_total
+            if (si <= n_individual) then
+                src = si
+            else if (has_sl_agg .and. si == n_individual + 1) then
+                src = m + 1
+            else
+                src = m + 2
+            end if
+
+            shifted_rhs = bs_temp(src)
+            do sj = 1, qdim
+                shifted_rhs = shifted_rhs - gammaxs_temp(src, sj) * theta_offset(sj)
+            end do
+
+            if (src == m + 1) then
+                if (shifted_rhs > 0.0d0) return
+                do sj = 1, qdim
+                    gammaxs(si, sj) = -gammaxs_temp(src, sj)
+                end do
+                bs(si) = -shifted_rhs
+                IBs(si) = qdim + n_total + si
+            else if (src == m + 2) then
+                if (shifted_rhs < 0.0d0) return
+                do sj = 1, qdim
+                    gammaxs(si, sj) = gammaxs_temp(src, sj)
+                end do
+                bs(si) = shifted_rhs
+                IBs(si) = qdim + si
+            else if (shifted_rhs < 0.0d0) then
+                do sj = 1, qdim
+                    gammaxs(si, sj) = -gammaxs_temp(src, sj)
+                end do
+                bs(si) = -shifted_rhs
+                IBs(si) = qdim + n_total + si
+            else
+                do sj = 1, qdim
+                    gammaxs(si, sj) = gammaxs_temp(src, sj)
+                end do
+                bs(si) = shifted_rhs
+                IBs(si) = qdim + si
+            end if
+            freevarrow(si) = (si > n_individual)
+        end do
+
+        IBs(n_total + 1) = 0
+        freevarrow(n_total + 1) = .true.
+        bs(n_total + 1) = 0.0d0
+        do sj = 1, qdim
+            gammaxs(n_total + 1, sj) = 0.0d0
+            do si = 1, n_total
+                if (IBs(si) > qdim .and. IBs(si) <= qdim + n_total) then
+                    gammaxs(n_total + 1, sj) = gammaxs(n_total + 1, sj) - &
+                        tau * ws(si) * gammaxs(si, sj)
+                else if (IBs(si) > qdim + n_total) then
+                    gammaxs(n_total + 1, sj) = gammaxs(n_total + 1, sj) - &
+                        (1.0d0 - tau) * ws(si) * gammaxs(si, sj)
+                end if
+            end do
+        end do
+
+        do si = 1, qdim
+            r1(si) = si
+            r2(si) = 0
+        end do
+        rr = 0.0d0
+        remaining = maxit - iter
+        if (remaining <= 0) return
+        call run_simplex_full_tvcqr(gammaxs, bs, IBs, freevarrow, r1, r2, rr, ws, &
+                                    m + 3, n_total, qdim, tol, remaining, bland, &
+                                    iter_fresh, no_pivot_fresh, converged_fresh)
+        iter = iter + iter_fresh
+        total_simplex_iterations = total_simplex_iterations + iter_fresh
+        if (no_pivot_fresh .or. (.not. converged_fresh)) return
+
+        delta_est = 0.0d0
+        do si = 1, n_total
+            if (IBs(si) >= 1 .and. IBs(si) <= qdim) then
+                delta_est(IBs(si)) = bs(si)
+            end if
+        end do
+        do si = 1, qdim
+            estimate(si) = theta_offset(si) + delta_est(si)
+            reduced_idx = r1(si) - qdim
+            if (reduced_idx < 1 .or. reduced_idx > n_individual) return
+            H_indices(si) = idx_not_jl_or_jh(reduced_idx)
+        end do
+        if (.not. tvcqr_H_basis_valid(H_indices, A, m, qdim)) return
+
+        call reorder_fresh_tableau(theta_offset, n_individual, n_total, reorder_ok)
+        if (.not. reorder_ok) return
+        success = .true.
+    end subroutine run_fresh_initialization
+
+    subroutine run_full_active_recovery(success)
+        implicit none
+        logical, intent(out) :: success
+        double precision :: zero_offset(2*(nvar+1))
+        integer :: fi, fj
+
+        success = .false.
+        zero_offset = 0.0d0
+        sl = .false.
+        sh = .false.
+        has_sl_agg = .false.
+        has_sh_agg = .false.
+        n_sl = 0
+        n_sh = 0
+        ms_org = m
+        ms = m
+        do fi = 1, m
+            idx_not_jl_or_jh(fi) = fi
+            not_jl_or_jh(fi) = .true.
+            ws(fi) = w(fi)
+            do fj = 1, 2*(nvar+1)
+                gammaxs_temp(fi, fj) = A(fi, fj)
+            end do
+            bs_temp(fi) = y(fi)
+        end do
+        call run_fresh_initialization(zero_offset, m, m, success)
+    end subroutine run_full_active_recovery
+
+    subroutine run_simplex_full_tvcqr(gx, bv, IBv, fvr, r1v, r2v, rrv, wv, &
+                                      ldgx, mv, p, tl, mxit, bld, iters, no_pivot, converged)
+        implicit none
+        integer, intent(in) :: ldgx, mv, p, mxit
+        double precision, intent(inout) :: gx(ldgx, p), bv(mv+1)
+        integer, intent(inout) :: IBv(mv+1), r1v(p), r2v(p)
+        logical, intent(inout) :: fvr(mv+1)
+        double precision, intent(inout) :: rrv(2, p)
+        double precision, intent(in) :: wv(mv), tl
+        logical, intent(in) :: bld
+        integer, intent(out) :: iters
+        logical, intent(out) :: no_pivot, converged
+        double precision :: yyv(mv+1), eev(mv+1), kval(mv+1)
+        double precision :: rrlv, min_kv, pivot_val
+        integer :: ii, jj, kk, enter_col, enter_side, enter_var, idx_offset
+
+        iters = 0
+        no_pivot = .false.
+        converged = .false.
+        do while (iters < mxit)
+            do ii = 1, p
+                rrv(1, ii) = gx(mv+1, ii)
+                if (r2v(ii) /= 0) then
+                    idx_offset = r1v(ii) - p
+                    if (idx_offset >= 1 .and. idx_offset <= mv) then
+                        rrv(2, ii) = wv(idx_offset) - rrv(1, ii)
+                    else
+                        rrv(2, ii) = -rrv(1, ii)
+                    end if
+                else
+                    rrv(2, ii) = 0.0d0
+                    rrv(1, ii) = -abs(rrv(1, ii))
+                end if
+            end do
+
+            rrlv = minval(rrv)
+            if (rrlv >= -tl) then
+                converged = .true.
+                exit
+            end if
+
+            enter_col = 0
+            enter_side = 0
+            enter_var = huge(1)
+            if (bld) then
+                do jj = 1, p
+                    if (rrv(1, jj) < -tl .and. r1v(jj) < enter_var) then
+                        enter_var = r1v(jj)
+                        enter_col = jj
+                        enter_side = 1
+                    end if
+                end do
+                if (enter_col == 0) then
+                    do jj = 1, p
+                        if (rrv(2, jj) < -tl .and. r2v(jj) < enter_var) then
+                            enter_var = r2v(jj)
+                            enter_col = jj
+                            enter_side = 2
+                        end if
+                    end do
+                end if
+            else
+                do jj = 1, p
+                    do ii = 1, 2
+                        if (abs(rrv(ii, jj) - rrlv) < tl) then
+                            enter_col = jj
+                            enter_side = ii
+                            if (ii == 1) then
+                                enter_var = r1v(jj)
+                            else
+                                enter_var = r2v(jj)
+                            end if
+                            exit
+                        end if
+                    end do
+                    if (enter_col /= 0) exit
+                end do
+            end if
+            if (enter_col == 0) then
+                no_pivot = .true.
+                exit
+            end if
+
+            if (r2v(enter_col) /= 0) then
+                if (enter_side == 1) then
+                    yyv = gx(1:mv+1, enter_col)
+                else
+                    yyv = -gx(1:mv+1, enter_col)
+                end if
+                min_kv = huge(1.0d0)
+                kk = 0
+                do ii = 1, mv+1
+                    if (yyv(ii) > tl .and. .not. fvr(ii)) then
+                        kval(ii) = bv(ii) / yyv(ii)
+                        if (kval(ii) < min_kv - tl) then
+                            min_kv = kval(ii)
+                            kk = ii
+                        else if (abs(kval(ii) - min_kv) < tl .and. bld) then
+                            if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                        end if
+                    end if
+                end do
+                if (kk == 0) then
+                    no_pivot = .true.
+                    exit
+                end if
+                if (enter_side == 2) then
+                    idx_offset = r1v(enter_col) - p
+                    if (idx_offset >= 1 .and. idx_offset <= mv) then
+                        yyv(mv+1) = yyv(mv+1) + wv(idx_offset)
+                    end if
+                end if
+            else
+                yyv = gx(1:mv+1, enter_col)
+                min_kv = huge(1.0d0)
+                kk = 0
+                if (yyv(mv+1) < 0.0d0) then
+                    do ii = 1, mv+1
+                        if (yyv(ii) > tl .and. .not. fvr(ii)) then
+                            kval(ii) = bv(ii) / yyv(ii)
+                            if (kval(ii) < min_kv - tl) then
+                                min_kv = kval(ii)
+                                kk = ii
+                            else if (abs(kval(ii) - min_kv) < tl .and. bld) then
+                                if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                            end if
+                        end if
+                    end do
+                else
+                    do ii = 1, mv+1
+                        if (yyv(ii) < -tl .and. .not. fvr(ii)) then
+                            kval(ii) = -bv(ii) / yyv(ii)
+                            if (kval(ii) < min_kv - tl) then
+                                min_kv = kval(ii)
+                                kk = ii
+                            else if (abs(kval(ii) - min_kv) < tl .and. bld) then
+                                if (kk == 0 .or. IBv(ii) < IBv(kk)) kk = ii
+                            end if
+                        end if
+                    end do
+                end if
+                if (kk == 0) then
+                    no_pivot = .true.
+                    exit
+                end if
+                fvr(kk) = .true.
+            end if
+
+            do ii = 1, mv+1
+                if (ii == kk) then
+                    eev(ii) = 1.0d0 - 1.0d0 / yyv(kk)
+                else
+                    eev(ii) = yyv(ii) / yyv(kk)
+                end if
+            end do
+
+            if (IBv(kk) <= p + mv) then
+                gx(1:mv+1, enter_col) = 0.0d0
+                gx(kk, enter_col) = 1.0d0
+                r1v(enter_col) = IBv(kk)
+                r2v(enter_col) = IBv(kk) + mv
+            else
+                gx(1:mv+1, enter_col) = 0.0d0
+                gx(kk, enter_col) = -1.0d0
+                idx_offset = IBv(kk) - p - mv
+                if (idx_offset >= 1 .and. idx_offset <= mv) then
+                    gx(mv+1, enter_col) = wv(idx_offset)
+                end if
+                r1v(enter_col) = IBv(kk) - mv
+                r2v(enter_col) = IBv(kk)
+            end if
+
+            do jj = 1, p
+                pivot_val = gx(kk, jj)
+                do ii = 1, mv+1
+                    gx(ii, jj) = gx(ii, jj) - eev(ii) * pivot_val
+                end do
+            end do
+            pivot_val = bv(kk)
+            do ii = 1, mv+1
+                bv(ii) = bv(ii) - eev(ii) * pivot_val
+            end do
+            IBv(kk) = enter_var
+            iters = iters + 1
+        end do
+    end subroutine run_simplex_full_tvcqr
+
     subroutine record_repair()
         implicit none
 
@@ -2754,10 +3210,10 @@ contains
             not_new_sl_sh = .true.
         else
             do bi = 1, m
-                if ((r(bi) < 0.0d0) .and. sh(bi)) then
+                if ((r(bi) <= 0.0d0) .and. sh(bi)) then
                     sh(bi) = .false.
                 end if
-                if ((r(bi) > 0.0d0) .and. sl(bi)) then
+                if ((r(bi) >= 0.0d0) .and. sl(bi)) then
                     sl(bi) = .false.
                 end if
             end do
@@ -3071,7 +3527,8 @@ contains
         do i = left + 1, right
             value = arr(i)
             j = i - 1
-            do while (j >= left .and. arr(j) > value)
+            do while (j >= left)
+                if (arr(j) <= value) exit
                 arr(j + 1) = arr(j)
                 j = j - 1
             end do

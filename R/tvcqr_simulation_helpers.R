@@ -57,6 +57,25 @@ complete_tvcqr_sim_config <- function(config) {
     config$threshold_scale_mode,
     default = "loglog"
   )
+  config$exact_zero_audit <- tvcqr_sim_bool(
+    config$exact_zero_audit,
+    default = FALSE,
+    name = "exact_zero_audit"
+  )
+  if (is.null(config$exact_zero_methods)) {
+    config$exact_zero_methods <- character()
+  } else {
+    config$exact_zero_methods <- unique(as.character(config$exact_zero_methods))
+    config$exact_zero_methods <- config$exact_zero_methods[nzchar(config$exact_zero_methods)]
+  }
+  if (is.null(config$exact_zero_block_size)) {
+    config$exact_zero_block_size <- 128L
+  }
+  config$exact_zero_block_size <- as.integer(config$exact_zero_block_size)
+  if (length(config$exact_zero_block_size) != 1L ||
+      is.na(config$exact_zero_block_size) || config$exact_zero_block_size <= 0L) {
+    stop("config$exact_zero_block_size must be a positive integer.")
+  }
   if (!config$threshold_lower_bound && !is.null(config$Mm.factor)) {
     mm_factor_numeric <- as.numeric(config$Mm.factor)
     if (length(mm_factor_numeric) == 0L ||
@@ -319,12 +338,14 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     estimates = vector("list", length(methods)),
     H_seq = vector("list", length(methods)),
     timing = numeric(length(methods)),
-    method_metadata = vector("list", length(methods))
+    method_metadata = vector("list", length(methods)),
+    exact_zero_audit = vector("list", length(methods))
   )
   names(results$estimates) <- names(methods)
   names(results$H_seq) <- names(methods)
   names(results$timing) <- names(methods)
   names(results$method_metadata) <- names(methods)
+  names(results$exact_zero_audit) <- names(methods)
   
   # Run each method
   for (method_name in names(methods)) {
@@ -382,6 +403,10 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
       failed_eval = as.integer(first_or(fit$failed_eval, NA_integer_)),
       backend_ierr = as.integer(first_or(fit$backend_ierr, NA_integer_)),
       backend_failed_eval = as.integer(first_or(fit$backend_failed_eval, NA_integer_)),
+      init_mode = if (is.null(fit$init_mode)) NULL else as.character(fit$init_mode),
+      init_trigger = if (is.null(fit$init_trigger)) NULL else as.character(fit$init_trigger),
+      independent_init_count = as.integer(first_or(fit$independent_init_count, NA_integer_)),
+      full_active_recovery_count = as.integer(first_or(fit$full_active_recovery_count, NA_integer_)),
       n_sub_min = n_sub_summary$min,
       n_sub_max = n_sub_summary$max,
       n_sub_mean = n_sub_summary$mean,
@@ -408,6 +433,26 @@ run_single_tvcqr_replication <- function(rep_id, config, methods) {
     
     # Extract timing in seconds
     results$timing[[method_name]] <- summary(timing_result)$mean
+
+    if (isTRUE(config$exact_zero_audit) && method_name %in% config$exact_zero_methods) {
+      if (!exists("audit_tvcqr_exact_zero_compact", mode = "function")) {
+        stop("exact-zero audit requested, but audit_tvcqr_exact_zero_compact is not loaded.")
+      }
+      results$exact_zero_audit[[method_name]] <- audit_tvcqr_exact_zero_compact(
+        x = x,
+        y = y,
+        h = fit$h,
+        fit = fit,
+        metadata = list(
+          case = config$case,
+          tau = config$tau,
+          seed = seed_used,
+          rep_id = rep_id,
+          method = method_name
+        ),
+        block_size = config$exact_zero_block_size
+      )
+    }
   }
 
   results$seed_used <- seed_used
@@ -476,6 +521,11 @@ run_tvcqr_simulation <- function(config) {
   for (i in seq_along(method_names)) {
     method_metadata_list[[i]] <- vector("list", config$num_rep)
   }
+
+  exact_zero_audit <- setNames(vector("list", num_methods), method_names)
+  for (i in seq_along(method_names)) {
+    exact_zero_audit[[i]] <- vector("list", config$num_rep)
+  }
   
   # Run replications with progress tracking
   cat("Running replications...\n")
@@ -491,6 +541,7 @@ run_tvcqr_simulation <- function(config) {
       estimates_list[[method_name]][[rep]] <- rep_results$estimates[[method_name]]
       H_seq_list[[method_name]][rep] <- list(rep_results$H_seq[[method_name]])
       method_metadata_list[[method_name]][[rep]] <- rep_results$method_metadata[[method_name]]
+      exact_zero_audit[[method_name]][rep] <- list(rep_results$exact_zero_audit[[method_name]])
     }
     
     # Update progress bar
@@ -507,6 +558,7 @@ run_tvcqr_simulation <- function(config) {
     estimates_list = estimates_list,
     H_seq_list = H_seq_list,
     method_metadata_list = method_metadata_list,
+    exact_zero_audit = exact_zero_audit,
     method_names = method_names,
     Mm.factor_mapping = create_tvcqr_Mm_factor_mapping(method_names, config$Mm.factor),
     timestamp = Sys.time(),
