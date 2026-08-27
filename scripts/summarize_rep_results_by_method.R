@@ -283,6 +283,11 @@ baseline_status <- function(results_obj, model, rep_limit) {
   }
   n_success <- method_success_count(results_obj, ref, rep_limit)
   if (n_success == 0L) return(list(ok = FALSE, status = "baseline_failed"))
+  if (n_success < rep_limit) {
+    return(list(ok = FALSE, status = sprintf(
+      "baseline_incomplete:%d/%d_success", n_success, rep_limit
+    )))
+  }
   list(ok = TRUE, status = "ok")
 }
 
@@ -320,9 +325,17 @@ summarize_one_result <- function(model, case, tau, n, num_rep, seed_base, path,
 
     if (base_status$ok) {
       bias <- bias_vector(results_obj, model, method)
-      max_bias <- finite_or_na(bias, max)
-      bias_status <- "ok"
-      invalid_bias <- FALSE
+      bias_complete <- !is.null(bias) && length(bias) == num_rep && all(is.finite(bias))
+      if (bias_complete) {
+        max_bias <- max(bias)
+        bias_status <- "ok"
+        invalid_bias <- FALSE
+      } else {
+        max_bias <- NA_real_
+        n_finite_bias <- if (is.null(bias)) 0L else sum(is.finite(bias))
+        bias_status <- sprintf("invalid_bias_vector:%d/%d_finite", n_finite_bias, num_rep)
+        invalid_bias <- TRUE
+      }
     } else {
       max_bias <- NA_real_
       bias_status <- base_status$status

@@ -40,18 +40,20 @@ find_max_bias_replication <- function(results, method_name) {
     abs_diff <- abs(method_vec - baseline_vec)
     abs_baseline <- abs(baseline_vec)
     
-    threshold <- 1e-10
-    rel_bias <- ifelse(abs_baseline < threshold, 
-                       0, 
-                       abs_diff / abs_baseline)
+    rel_bias <- abs_diff / pmax(abs_baseline, 1e-10)
     
     # Calculate average relative bias for this replication
-    avg_rel_bias[rep] <- mean(rel_bias, na.rm = TRUE)
+    avg_rel_bias[rep] <- mean(rel_bias)
   }
   
-  # Find replication with maximum bias
-  max_rep <- which.max(avg_rel_bias)
-  max_bias_value <- avg_rel_bias[max_rep]
+  # Do not report a partial maximum when any replication is invalid.
+  if (any(!is.finite(avg_rel_bias))) {
+    max_rep <- NA_integer_
+    max_bias_value <- NA_real_
+  } else {
+    max_rep <- which.max(avg_rel_bias)
+    max_bias_value <- avg_rel_bias[max_rep]
+  }
   
   cat("\n========================================\n")
   cat(sprintf("Maximum Bias Analysis for %s\n", method_name))
@@ -134,13 +136,13 @@ compare_replication_estimates <- function(results, rep_id, methods_to_compare = 
       if (length(baseline) == length(method_est)) {
         diff <- method_est - baseline
         abs_diff <- abs(diff)
-        rel_diff <- abs_diff / (abs(baseline) + 1e-10)
+        rel_diff <- abs_diff / pmax(abs(baseline), 1e-10)
         
         cat(sprintf("\n%s vs llqr:\n", method))
-        cat(sprintf("  Mean absolute diff: %.6e\n", mean(abs_diff, na.rm = TRUE)))
-        cat(sprintf("  Max absolute diff: %.6e\n", max(abs_diff, na.rm = TRUE)))
-        cat(sprintf("  Mean relative diff: %.6e\n", mean(rel_diff, na.rm = TRUE)))
-        cat(sprintf("  Max relative diff: %.6e\n", max(rel_diff, na.rm = TRUE)))
+        cat(sprintf("  Mean absolute diff: %.6e\n", mean(abs_diff)))
+        cat(sprintf("  Max absolute diff: %.6e\n", max(abs_diff)))
+        cat(sprintf("  Mean relative diff: %.6e\n", mean(rel_diff)))
+        cat(sprintf("  Max relative diff: %.6e\n", max(rel_diff)))
         
         # Find indices with largest differences
         top_diff_idx <- order(abs_diff, decreasing = TRUE)[1:min(5, length(abs_diff))]
@@ -295,8 +297,8 @@ visualize_problematic_case <- function(problematic_case, save_plot = TRUE,
     for (method in setdiff(names(estimates), "llqr")) {
       method_est <- estimates[[method]]
       if (length(baseline) == length(method_est)) {
-        rel_diff <- abs(method_est - baseline) / (abs(baseline) + 1e-10)
-        max_rel_diff <- max(max_rel_diff, max(rel_diff, na.rm = TRUE))
+        rel_diff <- abs(method_est - baseline) / pmax(abs(baseline), 1e-10)
+        max_rel_diff <- max(max_rel_diff, max(rel_diff))
       }
     }
     
@@ -309,7 +311,7 @@ visualize_problematic_case <- function(problematic_case, save_plot = TRUE,
     for (method in setdiff(names(estimates), "llqr")) {
       method_est <- estimates[[method]]
       if (length(baseline) == length(method_est)) {
-        rel_diff <- abs(method_est - baseline) / (abs(baseline) + 1e-10)
+        rel_diff <- abs(method_est - baseline) / pmax(abs(baseline), 1e-10)
         lines(x_sorted, rel_diff[sorted_idx], 
               col = colors[color_idx], lwd = 2)
         color_idx <- color_idx + 1

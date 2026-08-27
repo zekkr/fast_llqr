@@ -276,16 +276,6 @@ calculate_average_relative_bias_tvcqr <- function(results_obj,
   
   estimates_list <- results_obj$estimates_list
   
-  # For the reference method itself, bias is 0
-  if (method_name == reference_method) {
-    if (method_name %in% names(estimates_list)) {
-      n_rep <- length(estimates_list[[method_name]])
-      return(rep(0, n_rep))
-    } else {
-      return(NULL)
-    }
-  }
-  
   # Check if both methods exist in estimates_list
   if (!reference_method %in% names(estimates_list)) {
     cat(sprintf("  Warning: Reference method '%s' not found in estimates_list\n", 
@@ -311,6 +301,12 @@ calculate_average_relative_bias_tvcqr <- function(results_obj,
   
   # Initialize vector to store average relative bias for each replication
   avg_rel_bias <- numeric(n_rep)
+  expected_size <- suppressWarnings(as.integer(results_obj$config$n))
+  if (length(expected_size) != 1L || is.na(expected_size) || expected_size <= 0L) {
+    expected_size <- NULL
+  } else {
+    expected_size <- 4L * expected_size
+  }
   
   # Loop through each replication
   for (i in 1:n_rep) {
@@ -342,20 +338,32 @@ calculate_average_relative_bias_tvcqr <- function(results_obj,
       avg_rel_bias[i] <- NA
       next
     }
+
+    if (!is.null(expected_size) && length(reference_theta) != expected_size) {
+      cat(sprintf(
+        "  Warning: Unexpected TVCQR estimate size in replication %d for method %s: expected %d, found %d\n",
+        i, method_name, expected_size, length(reference_theta)
+      ))
+      avg_rel_bias[i] <- NA_real_
+      next
+    }
+
+    if (!is.numeric(reference_theta) || !is.numeric(method_theta) ||
+        any(!is.finite(reference_theta)) || any(!is.finite(method_theta))) {
+      cat(sprintf("  Warning: Non-finite TVCQR estimates in replication %d for method %s\n",
+                  i, method_name))
+      avg_rel_bias[i] <- NA_real_
+      next
+    }
     
-    # Calculate element-wise relative bias
-    # abs(method_theta_ij - reference_theta_ij) / abs(reference_theta_ij)
+    # Calculate d_rk = |a_rk - b_rk| / max(|b_rk|, 1e-10).
     abs_diff <- abs(method_theta - reference_theta)
     abs_reference <- abs(reference_theta)
-    
-    # Avoid division by zero
-    threshold <- 1e-10
-    rel_bias <- ifelse(abs_reference < threshold, 
-                       0,  # If reference is very small, set bias to 0
-                       abs_diff / abs_reference)
+
+    rel_bias <- abs_diff / pmax(abs_reference, 1e-10)
     
     # Calculate average across all elements
-    avg_rel_bias[i] <- mean(rel_bias, na.rm = TRUE)
+    avg_rel_bias[i] <- mean(rel_bias)
   }
   
   return(avg_rel_bias)
@@ -382,16 +390,6 @@ calculate_average_relative_bias_llqr <- function(results_obj,
   
   estimates_list <- results_obj$estimates_list
   
-  # For the reference method itself, bias is 0
-  if (method_name == reference_method) {
-    if (method_name %in% names(estimates_list)) {
-      n_rep <- length(estimates_list[[method_name]])
-      return(rep(0, n_rep))
-    } else {
-      return(NULL)
-    }
-  }
-  
   # Check if both methods exist in estimates_list
   if (!reference_method %in% names(estimates_list)) {
     cat(sprintf("  Warning: Reference method '%s' not found in estimates_list\n", 
@@ -417,6 +415,10 @@ calculate_average_relative_bias_llqr <- function(results_obj,
   
   # Initialize vector to store average relative bias for each replication
   avg_rel_bias <- numeric(n_rep)
+  expected_size <- suppressWarnings(as.integer(results_obj$config$n))
+  if (length(expected_size) != 1L || is.na(expected_size) || expected_size <= 0L) {
+    expected_size <- NULL
+  }
   
   # Loop through each replication
   for (i in 1:n_rep) {
@@ -443,20 +445,31 @@ calculate_average_relative_bias_llqr <- function(results_obj,
       avg_rel_bias[i] <- NA
       next
     }
+
+    if (!is.null(expected_size) && length(reference_ll) != expected_size) {
+      cat(sprintf(
+        "  Warning: Unexpected LLQR estimate size in replication %d for method %s: expected %d, found %d\n",
+        i, method_name, expected_size, length(reference_ll)
+      ))
+      avg_rel_bias[i] <- NA_real_
+      next
+    }
+
+    if (any(!is.finite(reference_ll)) || any(!is.finite(method_ll))) {
+      cat(sprintf("  Warning: Non-finite LLQR estimates in replication %d for method %s\n",
+                  i, method_name))
+      avg_rel_bias[i] <- NA_real_
+      next
+    }
     
-    # Calculate element-wise relative bias
-    # abs(method_ll_i - reference_ll_i) / abs(reference_ll_i)
+    # Calculate d_rk = |a_rk - b_rk| / max(|b_rk|, 1e-10).
     abs_diff <- abs(method_ll - reference_ll)
     abs_reference <- abs(reference_ll)
-    
-    # Avoid division by zero
-    threshold <- 1e-10
-    rel_bias <- ifelse(abs_reference < threshold, 
-                       0,  # If reference is very small, set bias to 0
-                       abs_diff / abs_reference)
+
+    rel_bias <- abs_diff / pmax(abs_reference, 1e-10)
     
     # Calculate average across all elements
-    avg_rel_bias[i] <- mean(rel_bias, na.rm = TRUE)
+    avg_rel_bias[i] <- mean(rel_bias)
   }
   
   return(avg_rel_bias)

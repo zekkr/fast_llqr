@@ -610,32 +610,32 @@ compute_llqr_max_average_relative_bias <- function(results) {
   }
   
   baseline_estimates <- estimates_list[["llqr"]]
+  expected_size <- suppressWarnings(as.integer(results$config$n))
+  if (length(expected_size) != 1L || is.na(expected_size) || expected_size <= 0L) {
+    expected_size <- NULL
+  }
   
   # Initialize vector to store maximum average relative bias
   max_avg_rel_bias <- numeric(length(method_names))
   names(max_avg_rel_bias) <- method_names
   
-  # For llqr itself, the bias is 0
-  max_avg_rel_bias["llqr"] <- 0
-  
-  # Calculate for other methods
-  for (method_name in setdiff(method_names, "llqr")) {
+  # Calculate every method, including the baseline, so malformed baseline
+  # replications cannot be reported as an unconditional zero discrepancy.
+  for (method_name in method_names) {
     method_estimates <- estimates_list[[method_name]]
     
     # Vector to store average relative bias for each replication
     avg_rel_bias <- numeric(num_rep)
     
     for (rep in 1:num_rep) {
-      baseline_vec <- baseline_estimates[[rep]]
-      
-      # Check if method_estimates has this replication
-      if (rep > length(method_estimates) || is.null(method_estimates[[rep]])) {
+      if (rep > length(baseline_estimates) || rep > length(method_estimates) ||
+          is.null(baseline_estimates[[rep]]) || is.null(method_estimates[[rep]])) {
         warning(sprintf("Missing estimates for %s at replication %d", 
                         method_name, rep))
-        avg_rel_bias[rep] <- NA
+        avg_rel_bias[rep] <- NA_real_
         next
       }
-      
+      baseline_vec <- baseline_estimates[[rep]]
       method_vec <- method_estimates[[rep]]
       
       # Convert to numeric vectors if necessary
@@ -649,23 +649,39 @@ compute_llqr_max_average_relative_bias <- function(results) {
         avg_rel_bias[rep] <- NA
         next
       }
+
+      if (!is.null(expected_size) && length(baseline_vec) != expected_size) {
+        warning(sprintf(
+          "Unexpected LLQR estimate size for %s at replication %d: expected %d, found %d",
+          method_name, rep, expected_size, length(baseline_vec)
+        ))
+        avg_rel_bias[rep] <- NA_real_
+        next
+      }
+
+      if (any(!is.finite(baseline_vec)) || any(!is.finite(method_vec))) {
+        warning(sprintf("Non-finite LLQR estimates for %s at replication %d",
+                        method_name, rep))
+        avg_rel_bias[rep] <- NA_real_
+        next
+      }
       
-      # Calculate element-wise relative bias
+      # Calculate d_rk = |a_rk - b_rk| / max(|b_rk|, 1e-10).
       abs_diff <- abs(method_vec - baseline_vec)
       abs_baseline <- abs(baseline_vec)
-      
-      # Avoid division by zero
-      threshold <- 1e-10
-      rel_bias <- ifelse(abs_baseline < threshold, 
-                         0, 
-                         abs_diff / abs_baseline)
+
+      rel_bias <- abs_diff / pmax(abs_baseline, 1e-10)
       
       # Calculate average relative bias for this replication
-      avg_rel_bias[rep] <- mean(rel_bias, na.rm = TRUE)
+      avg_rel_bias[rep] <- mean(rel_bias)
     }
     
-    # Take the maximum across all replications
-    max_avg_rel_bias[method_name] <- max(avg_rel_bias, na.rm = TRUE)
+    # Do not hide malformed or non-finite replications by reducing over a subset.
+    max_avg_rel_bias[method_name] <- if (any(!is.finite(avg_rel_bias))) {
+      NA_real_
+    } else {
+      max(avg_rel_bias)
+    }
   }
   
   return(max_avg_rel_bias)
@@ -688,18 +704,21 @@ find_llqr_max_bias_replication <- function(results, method_name) {
   
   baseline_estimates <- estimates_list[["llqr"]]
   method_estimates <- estimates_list[[method_name]]
+  expected_size <- suppressWarnings(as.integer(results$config$n))
+  if (length(expected_size) != 1L || is.na(expected_size) || expected_size <= 0L) {
+    expected_size <- NULL
+  }
   
   # Vector to store average relative bias for each replication
   avg_rel_bias <- numeric(num_rep)
   
   for (rep in 1:num_rep) {
-    baseline_vec <- baseline_estimates[[rep]]
-    
-    if (rep > length(method_estimates) || is.null(method_estimates[[rep]])) {
-      avg_rel_bias[rep] <- NA
+    if (rep > length(baseline_estimates) || rep > length(method_estimates) ||
+        is.null(baseline_estimates[[rep]]) || is.null(method_estimates[[rep]])) {
+      avg_rel_bias[rep] <- NA_real_
       next
     }
-    
+    baseline_vec <- baseline_estimates[[rep]]
     method_vec <- method_estimates[[rep]]
     
     # Convert to numeric vectors
@@ -711,23 +730,35 @@ find_llqr_max_bias_replication <- function(results, method_name) {
       avg_rel_bias[rep] <- NA
       next
     }
+
+    if (!is.null(expected_size) && length(baseline_vec) != expected_size) {
+      avg_rel_bias[rep] <- NA_real_
+      next
+    }
+
+    if (any(!is.finite(baseline_vec)) || any(!is.finite(method_vec))) {
+      avg_rel_bias[rep] <- NA_real_
+      next
+    }
     
     # Calculate element-wise relative bias
     abs_diff <- abs(method_vec - baseline_vec)
     abs_baseline <- abs(baseline_vec)
     
-    threshold <- 1e-10
-    rel_bias <- ifelse(abs_baseline < threshold, 
-                       0, 
-                       abs_diff / abs_baseline)
+    rel_bias <- abs_diff / pmax(abs_baseline, 1e-10)
     
     # Calculate average relative bias for this replication
-    avg_rel_bias[rep] <- mean(rel_bias, na.rm = TRUE)
+    avg_rel_bias[rep] <- mean(rel_bias)
   }
   
-  # Find replication with maximum bias
-  max_rep <- which.max(avg_rel_bias)
-  max_bias_value <- avg_rel_bias[max_rep]
+  # Do not report a partial maximum when any replication is invalid.
+  if (any(!is.finite(avg_rel_bias))) {
+    max_rep <- NA_integer_
+    max_bias_value <- NA_real_
+  } else {
+    max_rep <- which.max(avg_rel_bias)
+    max_bias_value <- avg_rel_bias[max_rep]
+  }
   
   cat("\n========================================\n")
   cat(sprintf("Maximum Bias Analysis for %s\n", method_name))
@@ -818,13 +849,13 @@ compare_llqr_replication_estimates <- function(results, rep_id, methods_to_compa
       if (length(baseline) == length(method_est)) {
         diff <- method_est - baseline
         abs_diff <- abs(diff)
-        rel_diff <- abs_diff / (abs(baseline) + 1e-10)
+        rel_diff <- abs_diff / pmax(abs(baseline), 1e-10)
         
         cat(sprintf("\n%s vs llqr:\n", method))
-        cat(sprintf("  Mean absolute diff: %.6e\n", mean(abs_diff, na.rm = TRUE)))
-        cat(sprintf("  Max absolute diff: %.6e\n", max(abs_diff, na.rm = TRUE)))
-        cat(sprintf("  Mean relative diff: %.6e\n", mean(rel_diff, na.rm = TRUE)))
-        cat(sprintf("  Max relative diff: %.6e\n", max(rel_diff, na.rm = TRUE)))
+        cat(sprintf("  Mean absolute diff: %.6e\n", mean(abs_diff)))
+        cat(sprintf("  Max absolute diff: %.6e\n", max(abs_diff)))
+        cat(sprintf("  Mean relative diff: %.6e\n", mean(rel_diff)))
+        cat(sprintf("  Max relative diff: %.6e\n", max(rel_diff)))
       } else {
         cat(sprintf("\n%s vs llqr: Length mismatch (llqr=%d, %s=%d)\n", 
                     method, length(baseline), method, length(method_est)))
