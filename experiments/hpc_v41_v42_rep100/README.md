@@ -41,10 +41,16 @@ the summary never drops bad replications with `na.rm`.
 ## Build and submit
 
 ```sh
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 bash experiments/hpc_v41_v42_rep100/build_variants.sh
 FASTQR_RUN_TAG=<unique-tag> \
   bash experiments/hpc_v41_v42_rep100/submit_all.sh
 ```
+
+On Linux, the build script reads the LAPACK and BLAS linker flags from the
+active R installation. This keeps the experiment DLLs on the same numerical
+libraries used by the R fitting session (the cluster R module exposes these as
+`Rlapack` and `Rblas`).
 
 The submission script creates one array and one merge job for each of the 48
 model/config combinations, then submits one final summary job. It uses 56

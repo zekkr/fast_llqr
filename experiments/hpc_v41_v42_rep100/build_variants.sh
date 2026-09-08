@@ -13,7 +13,16 @@ COMMON_FLAGS=(-O3 -march=native -funroll-loops -ffast-math -fPIC)
 build_linux() {
   local source_file="$1"
   local output_file="$2"
-  "${FC}" -shared "${COMMON_FLAGS[@]}" -o "${output_file}" "${source_file}" -llapack -lblas
+  local -a lapack_flags=(-llapack)
+  local -a blas_flags=(-lblas)
+
+  if command -v R >/dev/null 2>&1; then
+    read -r -a lapack_flags <<< "$(R CMD config LAPACK_LIBS)"
+    read -r -a blas_flags <<< "$(R CMD config BLAS_LIBS)"
+  fi
+
+  "${FC}" -shared "${COMMON_FLAGS[@]}" -o "${output_file}" "${source_file}" \
+    "${lapack_flags[@]}" "${blas_flags[@]}"
 }
 
 build_macos() {
