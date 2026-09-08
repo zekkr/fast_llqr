@@ -104,7 +104,7 @@ EOF
 #SBATCH -e ${LOG_DIR}/%x.%j.err
 
 set -euo pipefail
-module load soft/R/v4.3.1
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
 export FASTQR_PROJECT_DIR=${PROJECT_DIR}
 export FASTQR_MODEL=${model}
@@ -152,7 +152,7 @@ summary_job="$(sbatch --parsable --dependency="afterany:${dependency}" <<EOF
 #SBATCH -e ${LOG_DIR}/%x.%j.err
 
 set -euo pipefail
-module load soft/R/v4.3.1
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
 export FASTQR_PROJECT_DIR=${PROJECT_DIR}
 export FASTQR_NUM_REP=${NUM_REP}
