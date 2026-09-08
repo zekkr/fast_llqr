@@ -67,9 +67,9 @@ submit_config() {
 #SBATCH -e ${LOG_DIR}/%x.%A_%a.err
 
 set -euo pipefail
-module load compilers/gcc/v12.2.0
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
-export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64:\${LD_LIBRARY_PATH:-}
+export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64/R/lib:/apps/soft/R/R-4.3.1/lib64:\${LD_LIBRARY_PATH:-}
 export R_LIBS_USER=/home/wuweic/R/x86_64-pc-linux-gnu-library/4.3
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -104,6 +104,7 @@ EOF
 #SBATCH -e ${LOG_DIR}/%x.%j.err
 
 set -euo pipefail
+module load soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
 export FASTQR_PROJECT_DIR=${PROJECT_DIR}
 export FASTQR_MODEL=${model}
@@ -151,6 +152,7 @@ summary_job="$(sbatch --parsable --dependency="afterany:${dependency}" <<EOF
 #SBATCH -e ${LOG_DIR}/%x.%j.err
 
 set -euo pipefail
+module load soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
 export FASTQR_PROJECT_DIR=${PROJECT_DIR}
 export FASTQR_NUM_REP=${NUM_REP}
