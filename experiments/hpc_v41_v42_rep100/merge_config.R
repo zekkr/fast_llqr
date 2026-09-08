@@ -16,6 +16,8 @@ as_num <- function(name, default = NA_real_) {
 
 project_dir <- normalizePath(Sys.getenv("FASTQR_PROJECT_DIR", unset = getwd()), mustWork = TRUE)
 setwd(project_dir)
+source(file.path(project_dir, "experiments/hpc_v41_v42_rep100/retry_helpers.R"))
+settings <- retry_settings()
 
 model <- tolower(Sys.getenv("FASTQR_MODEL", unset = ""))
 case_id <- as_int("FASTQR_CASE")
@@ -37,6 +39,7 @@ partial_dir <- file.path(config_dir, "partials")
 dir.create(config_dir, recursive = TRUE, showWarnings = FALSE)
 
 rows <- list()
+attempt_rows <- list()
 missing_ids <- integer()
 malformed_ids <- integer()
 
@@ -47,16 +50,23 @@ for (rep_id in seq_len(num_rep)) {
     next
   }
   value <- tryCatch(readRDS(path), error = function(e) e)
-  valid <- !inherits(value, "error") && is.data.frame(value) &&
-    nrow(value) == length(expected_methods) &&
-    setequal(as.character(value$method), expected_methods) &&
-    all(as.integer(value$rep_id) == rep_id) &&
-    all(as.integer(value$seed) == seed_base + rep_id)
+  if (is.data.frame(value) && settings$policy == "none") {
+    legacy <- value
+    legacy$threw_error <- FALSE
+    legacy$error_stage <- NA_character_
+    legacy$data_generation_sec <- NA_real_
+    value <- run_baseline_retries(rep_id, seed_base, settings, function(...) legacy)
+  }
+  valid <- !inherits(value, "error") && isTRUE(tryCatch(validate_retry_result(
+    value, rep_id, seed_base,
+    list(run_tag = run_tag, model = model, case = case_id, tau = tau, n = n), settings
+  ), error = function(e) FALSE))
   if (!valid) {
     malformed_ids <- c(malformed_ids, rep_id)
     next
   }
-  rows[[length(rows) + 1L]] <- value[match(expected_methods, value$method), , drop = FALSE]
+  rows[[length(rows) + 1L]] <- value$final[match(expected_methods, value$final$method), , drop = FALSE]
+  attempt_rows[[length(attempt_rows) + 1L]] <- value$attempts
 }
 
 merged <- if (length(rows)) do.call(rbind, rows) else data.frame()
@@ -69,6 +79,9 @@ csv_path <- file.path(config_dir, "replication_metrics.csv")
 rds_path <- file.path(config_dir, "replication_metrics.rds")
 write.csv(merged, csv_path, row.names = FALSE, na = "")
 saveRDS(merged, rds_path, compress = "xz")
+attempts <- if (length(attempt_rows)) do.call(rbind, attempt_rows) else data.frame()
+write.csv(attempts, file.path(config_dir, "attempt_metrics.csv"), row.names = FALSE, na = "")
+saveRDS(attempts, file.path(config_dir, "attempt_metrics.rds"), compress = "xz")
 
 method_failures <- if (nrow(merged)) {
   aggregate(!merged$method_ok, list(method = merged$method), sum)

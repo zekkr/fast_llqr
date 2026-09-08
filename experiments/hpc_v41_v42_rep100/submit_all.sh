@@ -9,6 +9,20 @@ SEED_BASE="${FASTQR_SEED_BASE:-2026}"
 PARTITION="${PARTITION:-cnall}"
 ACCOUNT="${ACCOUNT:-users}"
 WALLTIME="${WALLTIME:-08:00:00}"
+MODELS="${FASTQR_MODELS:-llqr,tvcqr}"
+RETRY_POLICY="${FASTQR_BASELINE_RETRY_POLICY:-none}"
+MAX_ATTEMPTS="${FASTQR_MAX_ATTEMPTS_PER_REP:-20}"
+RETRY_STRIDE="${FASTQR_RETRY_STRIDE:-1000000}"
+PREVIOUS_RUN_TAG="${FASTQR_PREVIOUS_RUN_TAG:-}"
+IFS=',' read -r -a selected_models <<< "${MODELS}"
+for model in "${selected_models[@]}"; do
+  [[ "${model}" == llqr || "${model}" == tvcqr ]] || { printf 'Invalid model\n' >&2; exit 2; }
+done
+[[ "${RETRY_POLICY}" == none || "${RETRY_POLICY}" == paper_baseline_error ]] || exit 2
+if [[ "${RETRY_POLICY}" == paper_baseline_error && "${MODELS}" != llqr ]]; then
+  printf 'Baseline regeneration is LLQR-only\n' >&2
+  exit 2
+fi
 
 if [[ "${NUM_REP}" != "100" ]]; then
   printf 'Refusing non-approved replication count: %s\n' "${NUM_REP}" >&2
@@ -21,14 +35,20 @@ fi
 
 cd "${PROJECT_DIR}"
 
-for binary in llqr_v41.so llqr_v42.so llqr_lean_seq.so tvcqr_v41.so tvcqr_v42.so tvcqr_lean_seq.so; do
+for model in "${selected_models[@]}"; do
+for binary in "${model}_v41.so" "${model}_v42.so" "${model}_lean_seq.so"; do
   if [[ ! -s "experiments/hpc_v41_v42_rep100/build/${binary}" ]]; then
     printf 'Missing experiment binary: %s\n' "${binary}" >&2
     exit 2
   fi
 done
+done
 
 LOG_DIR="logs/v41_v42_rep100/${RUN_TAG}"
+if [[ -e "${LOG_DIR}" || -e "${BASE_DIR}/${RUN_TAG}" ]]; then
+  printf 'Run tag already exists: %s\n' "${RUN_TAG}" >&2
+  exit 2
+fi
 mkdir -p "${LOG_DIR}"
 MANIFEST="${LOG_DIR}/submission_manifest.tsv"
 printf 'run_tag\tmodel\tcase\ttau\tn\tarray_job_id\tmerge_job_id\tcpus\tchunk_size\n' > "${MANIFEST}"
@@ -86,6 +106,9 @@ export FASTQR_SEED_BASE=${SEED_BASE}
 export FASTQR_CHUNK_SIZE=${chunk_size}
 export FASTQR_RUN_TAG=${RUN_TAG}
 export FASTQR_V4142_BASE_DIR=${BASE_DIR}
+export FASTQR_BASELINE_RETRY_POLICY=${RETRY_POLICY}
+export FASTQR_MAX_ATTEMPTS_PER_REP=${MAX_ATTEMPTS}
+export FASTQR_RETRY_STRIDE=${RETRY_STRIDE}
 cd ${PROJECT_DIR}
 Rscript experiments/hpc_v41_v42_rep100/driver_array.R
 EOF
@@ -115,6 +138,9 @@ export FASTQR_NUM_REP=${NUM_REP}
 export FASTQR_SEED_BASE=${SEED_BASE}
 export FASTQR_RUN_TAG=${RUN_TAG}
 export FASTQR_V4142_BASE_DIR=${BASE_DIR}
+export FASTQR_BASELINE_RETRY_POLICY=${RETRY_POLICY}
+export FASTQR_MAX_ATTEMPTS_PER_REP=${MAX_ATTEMPTS}
+export FASTQR_RETRY_STRIDE=${RETRY_STRIDE}
 cd ${PROJECT_DIR}
 Rscript experiments/hpc_v41_v42_rep100/merge_config.R
 EOF
@@ -128,7 +154,7 @@ EOF
     "${model}" "${case_id}" "${tau}" "${n}" "${array_job}" "${merge_job}"
 }
 
-for model in llqr tvcqr; do
+for model in "${selected_models[@]}"; do
   for case_id in 1 2; do
     for tau in 0.2 0.5 0.8; do
       for n in 1000 2000 5000 10000; do
@@ -159,6 +185,11 @@ export FASTQR_NUM_REP=${NUM_REP}
 export FASTQR_SEED_BASE=${SEED_BASE}
 export FASTQR_RUN_TAG=${RUN_TAG}
 export FASTQR_V4142_BASE_DIR=${BASE_DIR}
+export FASTQR_MODELS=${MODELS}
+export FASTQR_BASELINE_RETRY_POLICY=${RETRY_POLICY}
+export FASTQR_MAX_ATTEMPTS_PER_REP=${MAX_ATTEMPTS}
+export FASTQR_RETRY_STRIDE=${RETRY_STRIDE}
+export FASTQR_PREVIOUS_RUN_TAG=${PREVIOUS_RUN_TAG}
 cd ${PROJECT_DIR}
 Rscript experiments/hpc_v41_v42_rep100/summarize_run.R
 EOF

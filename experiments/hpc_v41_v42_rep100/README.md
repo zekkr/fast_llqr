@@ -10,7 +10,42 @@ This isolated harness compares four methods on the current paper DGPs:
 The approved grid is Cases 1--2, taus 0.2/0.5/0.8, sample sizes
 1000/2000/5000/10000, 100 replications, and seed base 2026. Replication `r`
 uses seed `2026 + r`, so the realized seeds are 2027--2126. The harness never
-substitutes a different seed after failure.
+substitutes a different seed after failure under its default `none` retry policy.
+
+## LLQR paper-driver regeneration run
+
+The follow-up LLQR-only run selects `FASTQR_MODELS=llqr` and
+`FASTQR_BASELINE_RETRY_POLICY=paper_baseline_error`. Only an exception from
+the direct fitting call triggers regeneration. The next seed is
+`seed_base + rep_id + (attempt - 1) * FASTQR_RETRY_STRIDE`, with defaults
+`FASTQR_MAX_ATTEMPTS_PER_REP=20` and `FASTQR_RETRY_STRIDE=1000000`.
+Candidate-only failures, returned nonfinite/malformed estimates, and data
+generation errors do not trigger regeneration. All four methods run on every
+attempt, with the same replication-dependent timing rotation. Their failures
+on discarded attempts remain in the audit; they are not described as fixed.
+
+Version-2 partial RDS files contain `final` (four compact method rows) and
+`attempts` (all compact attempts), never full estimates or H_seq. The merge
+checks identity, actual seeds, four-way pairing, timing positions, and the
+baseline-error reason for every regeneration. Final fitting times and numerical
+discrepancies use only the last attempt. `retry_summary.csv` reports discarded
+fit time and data generation separately, outside the fitting-time comparison.
+`seed_map.csv`, `attempt_metrics_all.csv`, and `all_attempt_failures.csv` retain
+the complete provenance. A baseline exception on attempt 20 is an exhausted
+failure. Final missing/failed calls still invalidate complete-config statistics.
+
+```sh
+Rscript experiments/hpc_v41_v42_rep100/test_retry.R
+FASTQR_MODELS=llqr FASTQR_BASELINE_RETRY_POLICY=paper_baseline_error \
+FASTQR_MAX_ATTEMPTS_PER_REP=20 FASTQR_RETRY_STRIDE=1000000 \
+FASTQR_PREVIOUS_RUN_TAG=v41v42_rep100_seed2026_4da4122_20260908_103038 \
+FASTQR_RUN_TAG=<new-unique-tag> \
+  bash experiments/hpc_v41_v42_rep100/submit_all.sh
+```
+
+The user provisionally accepted TVCQR v41 on 2026-09-08; no TVCQR rerun or
+production integration is included in this follow-up. Its active-first algorithm
+status remains separately documented. The LLQR candidate kernels are unchanged.
 
 ## Fixed algorithm settings
 
