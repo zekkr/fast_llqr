@@ -15,7 +15,7 @@ seed_base="${SSQR_SEED_BASE:-2025}"
   exit 2
 }
 [[ "$SSQR_RUN_TAG" =~ ^[A-Za-z0-9_.-]+$ && "$SSQR_PUSHED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
-remote_sha="$(git -C "$SSQR_PROJECT_ROOT" rev-parse HEAD)"
+remote_sha="$(cd "$SSQR_PROJECT_ROOT" && git rev-parse HEAD)"
 [[ "$remote_sha" == "$SSQR_PUSHED_SHA" ]] || {
   printf 'remote_sha=%s differs from pushed_sha=%s\n' "$remote_sha" "$SSQR_PUSHED_SHA" >&2
   exit 2

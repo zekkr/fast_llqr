@@ -7,7 +7,7 @@ partition="${SSQR_PARTITION:-cnall}"
 account="${SSQR_ACCOUNT:-users}"
 sbatch_bin="${SSQR_SBATCH:-/rmprog/slurm/v22.05.7/bin/sbatch}"
 [[ "$SSQR_PREFLIGHT_TAG" =~ ^[A-Za-z0-9_.-]+$ && "$SSQR_PUSHED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
-[[ "$(git -C "$SSQR_PROJECT_ROOT" rev-parse HEAD)" == "$SSQR_PUSHED_SHA" ]] || exit 2
+[[ "$(cd "$SSQR_PROJECT_ROOT" && git rev-parse HEAD)" == "$SSQR_PUSHED_SHA" ]] || exit 2
 
 preflight_dir="$SSQR_PREFLIGHT_ROOT/$SSQR_PREFLIGHT_TAG"
 [[ ! -e "$preflight_dir" ]] || { printf 'preflight tag already exists\n' >&2; exit 2; }
