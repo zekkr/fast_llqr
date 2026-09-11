@@ -63,7 +63,19 @@ LLQR and TVCQR have one exception to basis transport. If the previous interpolat
 
 Low aggregate rows from `sl` are built from `glob.wx = colSums(A[sl, ] * w[sl])` and `glob.wy = sum(y[sl] * w[sl])`. High aggregate rows from `sh` are built from `ghib.wx = colSums(A[sh, ] * w[sh])` and `ghib.wy = sum(y[sh] * w[sh])`. Aggregate rows append `ws <- c(ws, 1)` because the original kernel weights have already been folded into aggregate `A` and `y`.
 
-For bounded-kernel evaluation points, threshold expansion counts only active near-boundary rows. Inactive non-H rows are not retained, aggregated, or repaired. Previous H observations are still forced into the retained tableau even when their current weight is zero; these rows are zero-cost basis padding for initialization, not active screened subsample rows. `first_n_sub` and `final_n_sub` report the actual reduced tableau row count: active screened rows plus forced previous-H padding plus aggregate rows.
+For bounded-kernel evaluation points, threshold expansion counts only active near-boundary rows. Inactive non-H rows are not retained, aggregated, or repaired. Previous H observations are still forced into the retained tableau even when their current weight is zero; these rows are zero-cost basis padding for initialization.
+
+The first retained set for an implemented transition is the set of all original individual-observation rows represented explicitly in the first reduced-solve attempt. It is the union of the observations selected by the effective threshold and the previous H/basis observations forced into the tableau, including zero-weight basis padding. It excludes aggregate pseudo-rows. The first evaluation point is a full solve and has no first retained set. Diagnostic fields must distinguish:
+
+- `initial_threshold_hits`: threshold-selected individual rows before any expansion;
+- `threshold_expansion_steps`: the number of threshold expansions before the first reduced-solve attempt;
+- `effective_threshold_hits`: threshold-selected individual rows after those expansions;
+- `basis_forced_rows`: additional previous-H rows forced into the first attempt;
+- `first_retained_size`: `effective_threshold_hits + basis_forced_rows`;
+- `first_aggregate_rows`: zero, one, or two aggregate pseudo-rows;
+- `first_tableau_rows`: `first_retained_size + first_aggregate_rows`.
+
+Legacy `first_n_sub`/tableau-size diagnostics include aggregate rows and therefore must not be reported as the first retained-set size. Any theorem or simulation table that uses the implemented `|S_{j,n}|` must use `first_retained_size` and state that the retained set includes the basis-padding union.
 
 Inside the reduced problem, `idpos <- which(r[not_jl_or_jh] > 0)` identifies individual positive residual rows and `idneg <- which(r[not_jl_or_jh] < 0)` identifies individual negative residual rows. Current `H` rows are removed from `idpos` and `idneg`. Positive rows use `u` basis variables, negative rows use `v` basis variables, and the nonbasic residual pairs for the `H` rows are `r1 <- H + q` and `r2 <- r1 + ms`.
 
@@ -75,6 +87,8 @@ Inside the reduced problem, `idpos <- which(r[not_jl_or_jh] > 0)` identifies ind
 - high aggregate rows from `sh` represent the positive-residual side and use `P = +1`.
 
 The objective coefficients for `Hbar` are stored in `lambda`: `tau * ws[idpos]` for positive individual rows, `(1 - tau) * ws[idneg]` for negative individual rows, `1 - tau` for low aggregate rows, and `tau` for high aggregate rows.
+
+Aggregate pseudo-rows are protected bookkeeping rows and do not participate in the simplex ratio test. This is an accepted implementation convention: aggregate slack variables may remain basic while the pivot search is restricted to individual-observation rows. It does not change the strict-sign verification requirement for the observations represented by an aggregate.
 
 The H-based block initialization uses:
 
