@@ -103,8 +103,9 @@ validate_job="$($sbatch_bin --parsable --dependency="afterany:$audit_job" <<EOF
 #SBATCH -o $preflight_dir/logs/%x.%j.out
 #SBATCH -e $preflight_dir/logs/%x.%j.err
 set -euo pipefail
-module load soft/R/v4.3.1
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
+export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64/R/lib:/apps/soft/R/R-4.3.1/lib64:\${LD_LIBRARY_PATH:-}
 export SSQR_PREFLIGHT_DIR=$preflight_dir SSQR_PUSHED_SHA=$SSQR_PUSHED_SHA
 cd $SSQR_PROJECT_ROOT
 Rscript $experiment_dir/validate_preflight.R

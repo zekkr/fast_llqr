@@ -126,8 +126,9 @@ EOF
 #SBATCH -o $log_dir/%x.%j.out
 #SBATCH -e $log_dir/%x.%j.err
 set -euo pipefail
-module load soft/R/v4.3.1
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
+export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64/R/lib:/apps/soft/R/R-4.3.1/lib64:\${LD_LIBRARY_PATH:-}
 export SSQR_PROJECT_ROOT=$SSQR_PROJECT_ROOT SSQR_EXPERIMENT_DIR=$experiment_dir
 export SSQR_OUTPUT_ROOT=$SSQR_OUTPUT_ROOT SSQR_RUN_TAG=$SSQR_RUN_TAG
 export SSQR_MODEL=$model SSQR_CASE=$case_id SSQR_TAU=$tau SSQR_N=$n
@@ -167,8 +168,9 @@ summary_job="$($sbatch_bin --parsable --dependency="afterany:$dependency" <<EOF
 #SBATCH -o $log_dir/%x.%j.out
 #SBATCH -e $log_dir/%x.%j.err
 set -euo pipefail
-module load soft/R/v4.3.1
+module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:\$PATH
+export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64/R/lib:/apps/soft/R/R-4.3.1/lib64:\${LD_LIBRARY_PATH:-}
 export SSQR_PROJECT_ROOT=$SSQR_PROJECT_ROOT SSQR_EXPERIMENT_DIR=$experiment_dir
 export SSQR_OUTPUT_ROOT=$SSQR_OUTPUT_ROOT SSQR_RUN_TAG=$SSQR_RUN_TAG
 export SSQR_NUM_REP=$num_rep SSQR_SEED_BASE=$seed_base
