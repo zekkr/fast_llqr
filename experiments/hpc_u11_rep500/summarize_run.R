@@ -10,8 +10,8 @@ seed_base <- as.integer(Sys.getenv("SSQR_SEED_BASE", "2025"))
 stopifnot(nzchar(run_tag), nzchar(output_root), num_rep == 500L, seed_base == 2025L)
 
 methods <- c("direct_baseline", "lean_seq", "unified_u11")
-models <- c("llqr", "tvcqr")
-cases <- 1:2
+models <- "llqr"
+cases <- 2L
 taus <- c(0.2, 0.5, 0.8)
 ns <- c(1000L, 2000L, 5000L, 10000L)
 run_dir <- file.path(output_root, run_tag)
@@ -107,12 +107,12 @@ write.csv(
 
 replacement_attempts <- if (nrow(a)) {
   a[a$attempt > 1L | a$baseline_retryable %in% TRUE, , drop = FALSE]
-} else data.frame()
+} else m[FALSE, , drop = FALSE]
 write.csv(replacement_attempts, file.path(tables, "baseline_regeneration_attempts.csv"), row.names = FALSE, na = "")
 write.csv(ii, file.path(tables, "integrity.csv"), row.names = FALSE, na = "")
 
 u11_rep <- if (nrow(m)) m[m$method == "unified_u11", c(
-  "run_tag", "model", "case", "tau", "n", "rep_id", "seed",
+  "run_tag", "model", "case", "tau", "n", "n_eval", "n_interior", "n_transitions", "grid_placeholder", "rep_id", "seed",
   "first_retained_size_max", "first_tableau_rows_max", "initial_threshold_hits_max",
   "effective_threshold_hits_max", "basis_forced_rows_max", "first_aggregate_rows_max",
   "threshold_initial", "threshold_effective_max", "threshold_expansion_total",
@@ -125,13 +125,11 @@ write.csv(u11_rep, file.path(tables, "retained_size_replication_metrics.csv"), r
 screen_rows <- list()
 sidx <- 0L
 if (nrow(u11_rep)) {
-  selected <- u11_rep[u11_rep$tau == 0.5 & (
-    (u11_rep$model == "llqr" & u11_rep$case == 2L) |
-      (u11_rep$model == "tvcqr" & u11_rep$case == 1L)
-  ), , drop = FALSE]
-  for (model in c("llqr", "tvcqr")) for (n in ns) {
-    d <- selected[selected$model == model & selected$n == n, , drop = FALSE]
-    if (nrow(d) != num_rep) next
+  selected <- u11_rep
+  for (tau in c(0.5, 0.2, 0.8)) for (model in models) for (n in ns) {
+    d <- selected[selected$model == model & selected$n == n & selected$tau == tau, , drop = FALSE]
+    if (nrow(d) != num_rep || any(!is.finite(d$first_retained_size_max))) next
+    rate <- d$first_pass_rate[d$n_transitions > 0L]
     b_n <- n^(-0.2)
     ratio_nominal <- d$first_retained_size_max /
       (n * b_n * d$threshold_initial + log(n))
@@ -140,7 +138,7 @@ if (nrow(u11_rep)) {
     sidx <- sidx + 1L
     screen_rows[[sidx]] <- data.frame(
       model, case = unique(d$case), paper_case = if (model == "llqr") 2L else 3L,
-      tau = 0.5, n, num_rep, seed_base, raw_method = "unified_u11",
+      tau, n, num_rep, seed_base, raw_method = "unified_u11",
       Mm.factor = if (model == "llqr") 0.1 else 1e-5,
       ok_reps = nrow(d), gamma_mean = mean(d$threshold_initial),
       gamma_min = min(d$threshold_initial), gamma_max = max(d$threshold_initial),
@@ -149,9 +147,11 @@ if (nrow(u11_rep)) {
       max_Sj_over_nb = mean(d$first_retained_size_max) / (n * b_n),
       max_Sj_over_nb_gamma_logn = mean(ratio_nominal),
       max_Sj_over_nb_effective_gamma_logn_conservative = mean(ratio_effective_conservative),
-      first_pass_prop_mean = mean(d$first_pass_rate),
-      first_pass_prop_min = min(d$first_pass_rate),
-      first_pass_prop_max = max(d$first_pass_rate),
+      first_pass_prop_mean = if (length(rate)) mean(rate) else NA_real_,
+      first_pass_prop_min = if (length(rate)) min(rate) else NA_real_,
+      first_pass_prop_max = if (length(rate)) max(rate) else NA_real_,
+      first_pass_defined_reps = length(rate), no_transition_reps = sum(d$n_transitions == 0L),
+      n_eval_mean = mean(d$n_eval), n_eval_min = min(d$n_eval), n_eval_max = max(d$n_eval),
       Fr_mean = mean(d$repaired_points), Fr_median = median(d$repaired_points),
       Fr_q90 = as.numeric(quantile(d$repaired_points, 0.9, names = FALSE, type = 7)),
       Fr_max = max(d$repaired_points), total_repair_mean = mean(d$repair_total),
@@ -163,20 +163,22 @@ if (nrow(u11_rep)) {
   }
 }
 screening <- if (length(screen_rows)) do.call(rbind, screen_rows) else data.frame()
-write.csv(screening, file.path(tables, "paper_screening_tau05_staging.csv"), row.names = FALSE, na = "")
+write.csv(screening, file.path(tables, "screening_all_taus.csv"), row.names = FALSE, na = "")
+write.csv(screening[screening$tau == 0.5, ], file.path(tables, "paper_screening_tau05_staging.csv"), row.names = FALSE, na = "")
 
 paper_methods <- summary[summary$method %in% c("direct_baseline", "unified_u11"), , drop = FALSE]
 lean_ablation <- summary[summary$method == "lean_seq", , drop = FALSE]
 write.csv(paper_methods, file.path(tables, "paper_method_summary_staging.csv"), row.names = FALSE, na = "")
 write.csv(lean_ablation, file.path(tables, "lean_seq_ablation_staging.csv"), row.names = FALSE, na = "")
 
-grid_complete <- length(missing_configs) == 0L && nrow(ii) == 48L && all(ii$complete %in% TRUE)
-all_methods_complete <- nrow(summary) == 144L && all(summary$n_present == num_rep)
+grid_complete <- length(missing_configs) == 0L && nrow(ii) == 12L && all(ii$complete %in% TRUE)
+all_methods_complete <- nrow(summary) == 36L && all(summary$n_present == num_rep)
 all_solver_stable <- all_methods_complete && all(summary$solver_stable) && all(summary$path_accepted)
 timing_ok <- all_methods_complete && all(summary$timing_order_balanced)
-discrepancy_ok <- all_methods_complete && all(summary$discrepancy_valid)
+discrepancy_ok <- all_methods_complete && all(summary$discrepancy_valid) &&
+  all(summary$max_average_relative_discrepancy <= 1e-8)
 u11 <- summary[summary$method == "unified_u11", , drop = FALSE]
-u11_gate <- nrow(u11) == 48L && all(u11$ierr_nonzero == 0L) &&
+u11_gate <- nrow(u11) == 12L && all(u11$ierr_nonzero == 0L) &&
   all(u11$failed_eval_nonzero == 0L) && all(u11$h_mismatch_count == 0L) &&
   all(u11$fallback_count == 0L) && all(u11$retained_decomposition_ok) &&
   all(is.finite(u11$max_average_relative_discrepancy)) &&
@@ -201,4 +203,5 @@ lines <- c(
 )
 writeLines(lines, file.path(tables, "run_summary.txt"))
 cat(paste(lines, collapse = "\n"), "\n")
+write.csv(m, file.path(tables, "all_replication_metrics.csv"), row.names = FALSE, na = "")
 if (!paper_staging_ready) quit(save = "no", status = 2L)

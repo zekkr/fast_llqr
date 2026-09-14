@@ -8,9 +8,9 @@ stopifnot(nzchar(preflight_dir), grepl("^[0-9a-f]{40}$", pushed_sha))
 smoke_pass <- file.path(preflight_dir, "HPC_PIPELINE_SMOKE_PASS")
 files <- sort(Sys.glob(file.path(preflight_dir, "cache_mode_audit", "config*.rds")))
 stopifnot(file.exists(smoke_pass), identical(trimws(readLines(smoke_pass)), pushed_sha))
-stopifnot(length(files) == 48L)
+stopifnot(length(files) == 12L)
 x <- do.call(rbind, lapply(files, readRDS))
-stopifnot(nrow(x) == 144L, length(unique(x$task_id)) == 48L)
+stopifnot(nrow(x) == 36L, length(unique(x$task_id)) == 12L)
 stopifnot(
   all(x$cache_flags %in% c(25L, 27L, 31L)),
   all(x$ierr == 0L), all(x$failed_eval == 0L),
@@ -21,4 +21,4 @@ stopifnot(
 )
 write.csv(x, file.path(preflight_dir, "cache_mode_audit.csv"), row.names = FALSE)
 writeLines(pushed_sha, file.path(preflight_dir, "PREFLIGHT_PASS"))
-cat(sprintf("PASS HPC smoke and 48-config cache audit sha=%s\n", pushed_sha))
+cat(sprintf("PASS HPC smoke and 12-config cache audit sha=%s\n", pushed_sha))

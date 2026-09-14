@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
 source("R/llqr_functions.R")
+source("experiments/hpc_u11_rep500/design.R")
 source("experiments/hpc_u11_rep500/adapters.R")
 dll <- ssqr_load("checked")
 
@@ -25,11 +26,11 @@ stopifnot(
 )
 cat("PASS retained-size decomposition with expansion, basis padding, aggregates, and first-point exclusion\n")
 
-dat <- generate_data(200L, case = 2L, seed = 2026L)
+dat <- generate_logistic_case2(200L, seed = 2026L)
 h <- llqr_default_bandwidth(dat$x, dat$y, 0.5, case = 2L)
 fits <- lapply(c(25L, 27L, 31L), function(flags) {
   Sys.setenv(SSQR_CACHE_FLAGS = as.character(flags))
-  ssqr_llqr(dll, dat$x, dat$y, 0.5, 2L, h, sort(dat$x), Mm.factor = 0.1)
+  ssqr_llqr(dll, dat$x, dat$y, 0.5, 2L, h, dat$z, Mm.factor = 0.1)
 })
 reference <- fits[[1L]]
 for (fit in fits[-1L]) {

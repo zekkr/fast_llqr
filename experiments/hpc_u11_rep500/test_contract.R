@@ -54,3 +54,17 @@ check(nrow(x$attempts) == 6L, "TVCQR baseline failure follows the same regenerat
 orders <- do.call(rbind, lapply(1:500, function(rep_id) mock()(rep_id, 2025L + rep_id)))
 tab <- table(orders$method, orders$method_position)
 check(all(apply(tab, 1L, function(v) diff(range(v)) <= 1L)), "rep500 three-method order is balanced")
+
+no_retry_seq <- function(rep_id, seed) {
+  x <- mock()(rep_id,seed);x$solver_ok[2L] <- x$accepted_ok[2L] <- FALSE
+  x$threw_error[2L] <- TRUE;x$error_stage[2L] <- "fit";x
+}
+check(nrow(run_attempt_chain("llqr",17L,2025L,no_retry_seq)$attempts)==3L,
+      "seq exception does not regenerate")
+always_fail <- function(rep_id, seed) {
+  x <- mock()(rep_id,seed);x$solver_ok[1L] <- x$accepted_ok[1L] <- FALSE
+  x$threw_error[1L] <- TRUE;x$error_stage[1L] <- "fit";x
+}
+x <- run_attempt_chain("llqr",17L,2025L,always_fail)
+check(nrow(x$attempts)==60L && all(x$final$retry_exhausted) && max(x$attempts$attempt)==20L,
+      "baseline retry cap retains all twenty failed attempts")

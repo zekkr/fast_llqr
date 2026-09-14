@@ -9,7 +9,7 @@ model<-tolower(Sys.getenv("SSQR_MODEL",""));case_id<-geti("SSQR_CASE");tau<-getn
 num_rep<-geti("SSQR_NUM_REP",500L);seed_base<-geti("SSQR_SEED_BASE",2025L)
 run_tag<-Sys.getenv("SSQR_RUN_TAG","");output_root<-Sys.getenv("SSQR_OUTPUT_ROOT","")
 smoke<-Sys.getenv("SSQR_ALLOW_SMOKE","0")=="1"
-stopifnot(model%in%c("llqr","tvcqr"),case_id%in%1:2,(smoke||num_rep==500L),(smoke||seed_base==2025L),nzchar(run_tag),nzchar(output_root))
+stopifnot(model=="llqr",case_id==2L,(smoke||num_rep==500L),(smoke||seed_base==2025L),nzchar(run_tag),nzchar(output_root))
 tag<-sprintf("case%d_tau%02d_n%d",case_id,round(100*tau),n);dir<-file.path(output_root,run_tag,model,tag);partial<-file.path(dir,"partials")
 observed<-list.files(partial,pattern="^rep[0-9]+[.]rds$");expected<-sprintf("rep%04d.rds",seq_len(num_rep))
 rows<-list();attempts<-list();missing<-integer();malformed<-integer()

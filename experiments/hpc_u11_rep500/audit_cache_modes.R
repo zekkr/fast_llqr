@@ -6,8 +6,9 @@ setwd(project)
 experiment_dir <- Sys.getenv("SSQR_EXPERIMENT_DIR", "experiments/hpc_u11_rep500")
 preflight_dir <- Sys.getenv("SSQR_PREFLIGHT_DIR", "")
 task_id <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID", "1"))
-stopifnot(nzchar(preflight_dir), task_id >= 1L, task_id <= 48L)
+stopifnot(nzchar(preflight_dir), task_id >= 1L, task_id <= 12L)
 
+source(file.path(experiment_dir, "design.R"))
 source(file.path(experiment_dir, "metrics.R"))
 source(file.path(experiment_dir, "model_methods.R"))
 source(file.path(experiment_dir, "adapters.R"))
@@ -16,8 +17,8 @@ source("R/tvcqr_functions.R")
 
 grid <- expand.grid(
   n = c(1000L, 2000L, 5000L, 10000L),
-  tau = c(0.2, 0.5, 0.8), case = 1:2,
-  model = c("llqr", "tvcqr"), stringsAsFactors = FALSE
+  tau = c(0.2, 0.5, 0.8), case = 2L,
+  model = "llqr", stringsAsFactors = FALSE
 )
 cfg <- grid[task_id, , drop = FALSE]
 model <- cfg$model[[1L]]; case_id <- cfg$case[[1L]]
@@ -27,8 +28,7 @@ dll <- ssqr_load("optimized")
 lean_dll <- load_lean_kernels(experiment_dir)
 seed <- 2026L
 dat <- if (model == "llqr") {
-  x <- generate_data(n, case_id, seed)
-  x$z <- sort(x$x)
+  x <- generate_logistic_case2(n, seed)
   x
 } else {
   generate_ts(n, case_id, seed, J = 100L, burn_in = 500L)
@@ -56,7 +56,7 @@ ref <- fits$f25
 max_abs <- function(a, b) max(abs(as.numeric(a) - as.numeric(b)))
 h_audit <- lapply(fits, function(x) {
   audit_h_path("unified_u11", x$ierr == 0L && x$failed_eval == 0L,
-               x$H, TRUE, expected_h, n, q)
+               x$H, TRUE, expected_h, n, q, length(dat$z))
 })
 
 rows <- do.call(rbind, lapply(names(fits), function(nm) {

@@ -40,7 +40,7 @@ printf '%s\n' "$SSQR_PUSHED_SHA" > "$run_dir/_run_meta/git_sha.txt"
 printf '%s\n' "$SSQR_PREFLIGHT_DIR" > "$run_dir/_run_meta/preflight_dir.txt"
 cp "$SSQR_PREFLIGHT_DIR/cache_mode_audit.csv" "$run_dir/_run_meta/"
 cp "$SSQR_PREFLIGHT_DIR/meta/job_ids.tsv" "$run_dir/_run_meta/preflight_job_ids.tsv"
-printf 'run_tag=%s\nnum_rep=%s\nseed_base=%s\ncache_flags=27\nprovider_flags=1\n' \
+printf 'run_tag=%s\nnum_rep=%s\nseed_base=%s\ncache_flags=27\nprovider_flags=1\ndesign=llqr_case2_logistic_variance1\nevaluation_interval=0.1,0.9\n' \
   "$SSQR_RUN_TAG" "$num_rep" "$seed_base" > "$run_dir/_run_meta/run_config.txt"
 
 manifest="$run_dir/_run_meta/submission_manifest.tsv"
@@ -145,8 +145,8 @@ EOF
     "$model" "$case_id" "$tau" "$n" "$array_job" "$merge_job"
 }
 
-for model in llqr tvcqr; do
-  for case_id in 1 2; do
+for model in llqr; do
+  for case_id in 2; do
     for tau in 0.2 0.5 0.8; do
       for n in 1000 2000 5000 10000; do
         submit_config "$model" "$case_id" "$tau" "$n"

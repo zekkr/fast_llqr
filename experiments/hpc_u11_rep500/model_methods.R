@@ -11,14 +11,15 @@ load_lean_kernels <- function(experiment_dir = Sys.getenv(
 
 run_llqr_lean <- function(dll, x, y, z, tau, h, case) {
   n <- length(y)
+  ne <- length(z)
   .Fortran(
     "llqr_seq_fortran", PACKAGE = dll[["name"]],
     x = as.double(x), y = as.double(y), z = as.double(z),
-    m = as.integer(n), nvar = 1L, rounds = as.integer(n),
+    m = as.integer(n), nvar = 1L, rounds = as.integer(ne),
     tau = as.double(tau), h = as.double(h), tol = 1e-14,
     maxit = 1000000L, case_int = as.integer(case), bland_int = 0L,
-    ll_est = double(n), d_ll_est = double(n), it_num = integer(n),
-    residual_est = double(n), H_mat = integer(2L * n)
+    ll_est = double(ne), d_ll_est = double(ne), it_num = integer(ne),
+    residual_est = double(n), H_mat = integer(2L * ne)
   )
 }
 

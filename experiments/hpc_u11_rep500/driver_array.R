@@ -27,7 +27,7 @@ output_root <- Sys.getenv("SSQR_OUTPUT_ROOT", "")
 smoke <- identical(Sys.getenv("SSQR_ALLOW_SMOKE", "0"), "1")
 
 stopifnot(
-  model %in% c("llqr", "tvcqr"), case_id %in% 1:2,
+  model == "llqr", case_id == 2L,
   tau %in% c(0.2, 0.5, 0.8), n > 0L,
   smoke || n %in% c(1000L, 2000L, 5000L, 10000L),
   smoke || num_rep == 500L, smoke || seed_base == 2025L,
@@ -40,6 +40,7 @@ last_id <- min(task_id * chunk, num_rep)
 if (first_id > last_id) quit(save = "no")
 rep_ids <- all_ids[first_id:last_id]
 
+source(file.path(experiment_dir, "design.R"))
 source(file.path(experiment_dir, "metrics.R"))
 source(file.path(experiment_dir, "retry.R"))
 source(file.path(experiment_dir, "model_methods.R"))
@@ -86,7 +87,16 @@ empty_compact_diagnostics <- function() {
 }
 
 u11_diagnostics <- function(diag) {
-  if (is.null(diag) || nrow(diag) < 2L) return(list())
+  if (is.null(diag)) return(empty_compact_diagnostics())
+  if (nrow(diag) == 1L) {
+    out <- empty_compact_diagnostics()
+    zero <- setdiff(names(out), c("first_pass_rate", "threshold_initial", "threshold_effective_max"))
+    out[zero] <- 0L
+    out$retained_decomposition_ok <- TRUE
+    out$first_full_m_recovery <- as.integer(diag[1L, "first_full_m_recovery"])
+    out$internal_recovery_total <- out$first_full_m_recovery
+    return(out)
+  }
   x <- diag[-1L, , drop = FALSE]
   repairs <- as.integer(x[, "repairs"])
   decomp <- x[, "first_tableau_rows"] ==
@@ -119,6 +129,7 @@ u11_diagnostics <- function(diag) {
 }
 
 run_method <- function(method, position, dat) {
+  ne <- length(dat$z)
   invisible(gc())
   stage <- "fit"
   started <- proc.time()[["elapsed"]]
@@ -145,7 +156,7 @@ run_method <- function(method, position, dat) {
       derivative <- if (method == "unified_u11") raw$derivative else raw$d_ll_est
       h_path <- if (method == "direct_baseline") NULL else
         if (method == "unified_u11") raw$H else raw$H_mat
-      state_finite <- length(derivative) == n && all(is.finite(derivative))
+      state_finite <- length(derivative) == ne && all(is.finite(derivative))
     } else {
       estimate <- if (method == "unified_u11") raw$estimate else raw$theta_ll_est
       h_path <- if (method == "direct_baseline") NULL else
@@ -155,11 +166,14 @@ run_method <- function(method, position, dat) {
       } else TRUE
     }
 
-    expected_k <- if (model == "llqr") n else 4L * n
+    expected_k <- if (model == "llqr") ne else 4L * n
     finite <- length(estimate) == expected_k && all(is.finite(estimate)) && state_finite
     ierr <- if (method == "unified_u11") as.integer(raw$ierr) else NA_integer_
     failed <- if (method == "unified_u11") as.integer(raw$failed_eval) else NA_integer_
-    solver_ok <- finite && (is.na(ierr) || ierr == 0L) && (is.na(failed) || failed == 0L)
+    iteration_limit_hit <- if (method == "unified_u11") {
+      any(raw$diagnostics[, "iterations"] >= 1000000L)
+    } else if (method == "lean_seq") any(raw$it_num >= 1000000L) else FALSE
+    solver_ok <- finite && !iteration_limit_hit && (is.na(ierr) || ierr == 0L) && (is.na(failed) || failed == 0L)
     compact <- if (method == "unified_u11") {
       u11_diagnostics(raw$diagnostics)
     } else {
@@ -174,7 +188,7 @@ run_method <- function(method, position, dat) {
     c(list(
       method = method, position = as.integer(position), elapsed_sec = elapsed,
       estimate = estimate, H = h_path, solver_ok = solver_ok,
-      finite_estimate = finite, ierr = ierr, failed_eval = failed,
+      finite_estimate = finite, ierr = ierr, failed_eval = failed, iteration_limit_hit = iteration_limit_hit,
       error_message = if (finite) NA_character_ else "nonfinite_or_dimension",
       threw_error = FALSE, error_stage = NA_character_
     ), compact)
@@ -188,14 +202,14 @@ run_attempt <- function(rep_id, seed) {
   generated_at <- proc.time()[["elapsed"]]
   generated <- tryCatch({
     if (model == "llqr") {
-      value <- generate_data(n, case_id, seed)
-      value$z <- sort(value$x)
+      value <- generate_logistic_case2(n, seed)
       value
     } else {
       generate_ts(n, case_id, seed, J = 100L, burn_in = 500L)
     }
   }, error = function(e) e)
   generation_sec <- proc.time()[["elapsed"]] - generated_at
+  ne <- if (inherits(generated, "error")) NA_integer_ else length(generated$z)
 
   shift <- (rep_id - 1L) %% length(experiment_methods)
   order_now <- experiment_methods[
@@ -211,12 +225,12 @@ run_attempt <- function(rep_id, seed) {
   names(fits) <- vapply(fits, `[[`, character(1L), "method")
   baseline <- fits$direct_baseline
   lean <- fits$lean_seq
-  expected_k <- if (model == "llqr") n else 4L * n
+  expected_k <- if (model == "llqr") ne else 4L * n
   q <- if (model == "llqr") 2L else 8L
 
   do.call(rbind, lapply(experiment_methods, function(method) {
     fit <- fits[[method]]
-    h_audit <- audit_h_path(method, fit$solver_ok, fit$H, lean$solver_ok, lean$H, n, q)
+    h_audit <- audit_h_path(method, fit$solver_ok, fit$H, lean$solver_ok, lean$H, n, q, ne)
     discrepancy <- if (!isTRUE(baseline$solver_ok)) {
       list(value = NA_real_, status = "baseline_failed")
     } else if (!isTRUE(fit$solver_ok)) {
@@ -225,10 +239,13 @@ run_attempt <- function(rep_id, seed) {
       paper_discrepancy(fit$estimate, baseline$estimate, expected_k)
     }
     data.frame(
-      run_tag, model, case = case_id, tau, n, rep_id, seed, method,
+      run_tag, model, case = case_id, tau, n, n_eval = ne,
+      n_interior = if (inherits(generated, "error")) NA_integer_ else generated$n_interior,
+      grid_placeholder = if (inherits(generated, "error")) NA else generated$placeholder,
+      n_transitions = max(0L, ne - 1L), rep_id, seed, method,
       method_position = fit$position, elapsed_sec = fit$elapsed_sec,
       solver_ok = fit$solver_ok, accepted_ok = h_audit$accepted,
-      finite_estimate = fit$finite_estimate, discrepancy = discrepancy$value,
+      finite_estimate = fit$finite_estimate, iteration_limit_hit = fit$iteration_limit_hit, discrepancy = discrepancy$value,
       discrepancy_status = discrepancy$status, ierr = fit$ierr,
       failed_eval = fit$failed_eval, h_check_status = h_audit$status,
       h_match_vs_lean = h_audit$match,

@@ -5,7 +5,7 @@ dir.create(root, recursive = TRUE)
 on.exit(unlink(root, recursive = TRUE), add = TRUE)
 methods <- c("direct_baseline", "lean_seq", "unified_u11")
 
-for (model in c("llqr", "tvcqr")) for (case_id in 1:2) for (tau in c(0.2, 0.5, 0.8)) for (n in c(1000L, 2000L, 5000L, 10000L)) {
+for (model in "llqr") for (case_id in 2L) for (tau in c(0.2, 0.5, 0.8)) for (n in c(1000L, 2000L, 5000L, 10000L)) {
   tag <- sprintf("case%d_tau%02d_n%d", case_id, round(100 * tau), n)
   out <- file.path(root, run_tag, model, tag)
   dir.create(out, recursive = TRUE)
@@ -13,7 +13,8 @@ for (model in c("llqr", "tvcqr")) for (case_id in 1:2) for (tau in c(0.2, 0.5, 0
     is_u11 <- method == "unified_u11"
     pos <- ((match(method, methods) - 1L - (0:499) %% 3L) %% 3L) + 1L
     data.frame(
-      run_tag, model, case = case_id, tau, n, rep_id = 1:500, seed = 2025L + 1:500,
+      run_tag, model, case = case_id, tau, n, n_eval = as.integer(.8*n),
+      n_interior = as.integer(.8*n), n_transitions = as.integer(.8*n)-1L, grid_placeholder = FALSE, rep_id = 1:500, seed = 2025L + 1:500,
       method, method_position = pos,
       elapsed_sec = c(direct_baseline = 2, lean_seq = 1, unified_u11 = 0.5)[[method]],
       solver_ok = TRUE, accepted_ok = TRUE, finite_estimate = TRUE,
@@ -36,8 +37,8 @@ for (model in c("llqr", "tvcqr")) for (case_id in 1:2) for (tau in c(0.2, 0.5, 0
       basis_forced_rows_max = if (is_u11) 2L else NA_integer_,
       first_aggregate_rows_max = if (is_u11) 2L else NA_integer_,
       retained_decomposition_ok = if (is_u11) TRUE else NA,
-      first_pass_count = if (is_u11) n - 1L else NA_integer_,
-      first_pass_total = if (is_u11) n - 1L else NA_integer_,
+      first_pass_count = if (is_u11) as.integer(.8*n) - 1L else NA_integer_,
+      first_pass_total = if (is_u11) as.integer(.8*n) - 1L else NA_integer_,
       first_pass_rate = if (is_u11) 1 else NA_real_,
       repaired_points = if (is_u11) 0L else NA_integer_,
       repair_total = if (is_u11) 0L else NA_integer_,
@@ -70,13 +71,23 @@ summary <- read.csv(file.path(root, run_tag, "tables", "config_method_summary.cs
 ratios <- read.csv(file.path(root, run_tag, "tables", "time_ratios.csv"))
 screen <- read.csv(file.path(root, run_tag, "tables", "paper_screening_tau05_staging.csv"))
 lines <- readLines(file.path(root, run_tag, "tables", "run_summary.txt"))
-stopifnot(nrow(summary) == 144L, nrow(ratios) == 48L, nrow(screen) == 8L)
+stopifnot(nrow(summary) == 36L, nrow(ratios) == 12L, nrow(screen) == 4L)
 stopifnot(all(ratios$u11_over_lean == 0.5), any(lines == "paper_staging_ready: TRUE"))
 stage <- file.path(root, run_tag, "paper_staging")
-stopifnot(
-  file.exists(file.path(stage, "rep500_seed2025_method_summary_candidate.csv")),
-  file.exists(file.path(stage, "runtime_tau05_preview.png")),
-  file.exists(file.path(stage, "runtime_complete_candidate.tex")),
-  nrow(read.csv(file.path(stage, "lean_seq_ablation_candidate.csv"))) == 48L
-)
-cat("PASS synthetic 48-config rep500 summary, stability gate, and paper staging\n")
+stopifnot(file.exists(file.path(stage, "REPORT.md")),
+          nrow(read.csv(file.path(stage, "runtime_all.csv"))) == 36L,
+          nrow(read.csv(file.path(stage, "screening_all.csv"))) == 12L,
+          nrow(read.csv(file.path(stage, "ablation_by_config.csv"))) == 12L,
+          all(screen$n_eval_mean == .8*screen$n))
+cat("PASS synthetic 12-config rep500 summary, stability gate, and standalone report\n")
+
+# A missing replication must not become a complete rep500 summary via na.rm.
+p <- file.path(root, run_tag, "llqr", "case2_tau20_n1000", "replication_metrics.rds")
+d <- readRDS(p);saveRDS(d[-1L,],p)
+status <- system2("Rscript", file.path(experiment_dir,"summarize_run.R"),env=env,
+                  stdout=FALSE,stderr=FALSE)
+stopifnot(status==2L)
+broken <- read.csv(file.path(root,run_tag,"tables","config_method_summary.csv"))
+broken <- broken[broken$tau==.2 & broken$n==1000 & broken$method=="direct_baseline",]
+stopifnot(broken$n_present==499L, is.na(broken$time_mean_sec), !broken$solver_stable)
+cat("PASS incomplete configuration rejected without silently averaging 499 records\n")

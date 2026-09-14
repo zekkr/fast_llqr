@@ -73,7 +73,7 @@ audit_job="$($sbatch_bin --parsable --dependency="afterok:$smoke_job" <<EOF
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --cpus-per-task=1
-#SBATCH --array=1-48%8
+#SBATCH --array=1-12%8
 #SBATCH --time=08:00:00
 #SBATCH -o $preflight_dir/logs/%x.%A_%a.out
 #SBATCH -e $preflight_dir/logs/%x.%A_%a.err

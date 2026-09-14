@@ -8,11 +8,12 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
 
 Rscript "$SSQR_EXPERIMENT_DIR/test_contract.R"
+Rscript "$SSQR_EXPERIMENT_DIR/test_interior.R"
 Rscript "$SSQR_EXPERIMENT_DIR/test_summary.R"
 Rscript "$SSQR_EXPERIMENT_DIR/test_retained_diagnostics.R"
 
 out="$SSQR_PREFLIGHT_DIR/hpc_smoke_results"
-for model in llqr tvcqr; do
+for model in llqr; do
   tag="hpc_rep2_${model}"
   env SSQR_OUTPUT_ROOT="$out" SSQR_ALLOW_SMOKE=1 \
     SSQR_NUM_REP=2 SSQR_SEED_BASE=2025 SSQR_CASE=2 SSQR_TAU=.5 SSQR_N=1000 \
@@ -27,7 +28,7 @@ for model in llqr tvcqr; do
 done
 
 Rscript -e '
-for (model in c("llqr", "tvcqr")) {
+for (model in "llqr") {
   p <- Sys.glob(file.path(Sys.getenv("SSQR_PREFLIGHT_DIR"), "hpc_smoke_results",
                           paste0("hpc_rep2_", model), model, "*", "replication_metrics.rds"))
   stopifnot(length(p) == 1L)
