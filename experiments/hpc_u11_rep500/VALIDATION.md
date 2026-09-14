@@ -58,3 +58,14 @@ malformed or extra records. Post-merge checks confirmed:
 
 No objective/KKT proof or full-grid rep500 success is inferred from this smoke.
 The new cluster preflight and formal 12-config rep500 run are not run yet.
+
+## Submission dry run
+
+A local Python mock of `sbatch` captured all emitted shell scripts and arguments
+without contacting the scheduler. `submit_logistic.sh` emitted five jobs
+(build, smoke, audit, validation, dispatcher); the dispatcher depends on successful
+validation. With a simulated matching preflight marker, `submit_all.sh` emitted
+27 build/fit/merge/summary/finalization jobs. The manifest contains exactly the
+12 intended LLQR Case 2 configurations; worker/chunk/array limits match the plan.
+All generated job scripts passed `bash -n`; a wrong checkout SHA was rejected.
+No cluster jobs were submitted during this test.
