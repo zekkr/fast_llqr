@@ -13,9 +13,9 @@ run.mkdir(parents=True,exist_ok=False);(run/'logs').mkdir();meta=run/'_run_meta'
 num_rep=1 if a.stage=='preflight' else 500
 params=dict(stage=a.stage,git_sha=a.sha,paper_cases=[1,2],kernel_case=2,ns=[1000,2000,5000,10000],taus=[.2,.5,.8],num_rep=num_rep,seed_base=2025,methods=['direct_baseline','lean_seq','unified_u11'],cache_flags=27,provider_flags=1,include_H_seq=False,preflight=a.preflight)
 (meta/'run_config.json').write_text(json.dumps(params,indent=2)+'\n');print(json.dumps(params),flush=True)
-base='''set -euo pipefail
-export LC_ALL=C LANG=C
-source /etc/profile >/dev/null 2>&1
+base='''export LC_ALL=C LANG=C
+source /etc/profile
+set -euo pipefail
 module load compilers/gcc/v12.2.0 soft/R/v4.3.1
 export PATH=/apps/soft/R/R-4.3.1/bin:$PATH
 export LD_LIBRARY_PATH=/apps/soft/R/R-4.3.1/lib64/R/lib:/apps/soft/R/R-4.3.1/lib64:${LD_LIBRARY_PATH:-}
