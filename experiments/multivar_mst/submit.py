@@ -9,7 +9,7 @@ p.add_argument('--preflight');p.add_argument('--pilot');a=p.parse_args()
 root=pathlib.Path.cwd();exp='experiments/multivar_mst'
 output=root/'results/hpc/multivar_mst_runs';run=output/a.tag
 assert all(c.isalnum() or c in '-_.' for c in a.tag)
-assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==a.sha
+assert subprocess.check_output(['git','rev-parse','HEAD'],universal_newlines=True).strip()==a.sha
 subprocess.check_call(['git','diff','--quiet','HEAD','--',exp])
 if a.stage in ('pilot','formal'):
     assert a.preflight
@@ -60,7 +60,7 @@ def submit(name,body,deps=None,array=None,time='08:00:00'):
          '-o',str(run/'logs/%x.%A_%a.out'),'-e',str(run/'logs/%x.%A_%a.err')]
     if deps:cmd+=['--dependency=afterok:'+':'.join(deps)]
     if array:cmd+=['--array='+array]
-    jid=subprocess.check_output(cmd+[str(script)],text=True).strip().split(';')[0]
+    jid=subprocess.check_output(cmd+[str(script)],universal_newlines=True).strip().split(';')[0]
     assert jid.isdigit();manifest.append(dict(name=name,job_id=jid,array=array))
     (meta/'jobs.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(name,jid,flush=True);return jid
