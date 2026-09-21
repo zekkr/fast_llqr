@@ -1,0 +1,130 @@
+[
+  {
+    "path": "frozen/.gitignore",
+    "sha256": "b0260f8f9b9ce77bd8d7e779a148b57db877aae3819609a1c715a84ff5c7bbb7"
+  },
+  {
+    "path": "frozen/R/llqr_functions.R",
+    "sha256": "d5c83b529694b017d376c34496000b16d200123a76686db2c82af087bc420bba"
+  },
+  {
+    "path": "frozen/R/tvcqr_functions.R",
+    "sha256": "890a2442aaa6c83e8707c27fa9d3988f0213913f5ca10b2f4ce76ed34bffaeda"
+  },
+  {
+    "path": "frozen/README.md",
+    "sha256": "ace00f055ceb0d7f2c93f49be27593cdab5211a66667d262442a26ea679c2e61"
+  },
+  {
+    "path": "frozen/VALIDATION.md",
+    "sha256": "face0396cb42bd7ab966c3813e1fb9031c2c2084746e6e568be55701cbf1d1cb"
+  },
+  {
+    "path": "frozen/adapters.R",
+    "sha256": "2b0fd5ce3449b1433b5c60943031bbc7877efb27779eb7544ae8aebba16a36b2"
+  },
+  {
+    "path": "frozen/audit_cache_modes.R",
+    "sha256": "6f42510d3a3f2cc148844765df351d1f474f46551a30eb58a2f6c37b68585c0d"
+  },
+  {
+    "path": "frozen/build_all.sh",
+    "sha256": "f02ea11cfe0a9b5376a8836c9463e9328d71425ad3279c82439a8baf377dc8c6"
+  },
+  {
+    "path": "frozen/build_paper_staging.R",
+    "sha256": "5522498b841b070105f8286818afcbb302bc7c1db38c6e47c2a636b4e2fdefbb"
+  },
+  {
+    "path": "frozen/design.R",
+    "sha256": "653ed99d00820175eb2cb9b3f7c85558080b4f272155909bb6b8980ff6e79dd6"
+  },
+  {
+    "path": "frozen/driver_array.R",
+    "sha256": "7438faab55266ff83f2946eec7c644817653ceb7add433bf2e8b83a370aec14c"
+  },
+  {
+    "path": "frozen/finalize_run.sh",
+    "sha256": "2f804be13df38d72f5e82aecde8d008ad5e35abc861745b3fcca55e8d8187a60"
+  },
+  {
+    "path": "frozen/fortran/kernel_entry.f90",
+    "sha256": "21871b16e0a92ceda67267bf4bc810ba495ce087bb686612cfffcd09aa4f4e8c"
+  },
+  {
+    "path": "frozen/fortran/llqr_seq_lean_sortskip.f90",
+    "sha256": "47fffa0d8c73583751d7ab8c8ca5d42f677f54dced96e1ea874fd169ac111233"
+  },
+  {
+    "path": "frozen/fortran/tvcqr_seq_lean_nohistory.f90",
+    "sha256": "6700ff6fc4e7a5c487949e98c7b511e20d76fea483dd8666f2429b0e3c14e225"
+  },
+  {
+    "path": "frozen/fortran/weighted_qr_core.f90",
+    "sha256": "6b522a189d3674b8f76bf578636e96fed2d43ac0cc803a36c657c412f632dde7"
+  },
+  {
+    "path": "frozen/hpc_pipeline_smoke.sh",
+    "sha256": "493cb58bf032e93cc74619d668d818097d99c5260ea85c77030b3ae6f6c06e15"
+  },
+  {
+    "path": "frozen/merge_config.R",
+    "sha256": "5a2ed20b9c482650de45ee44848032ed5bff180292842fbeb39f5e8ec5441e20"
+  },
+  {
+    "path": "frozen/metrics.R",
+    "sha256": "523a344a18d2fd22d7bd43996130955738ce71177ab2cb4d96f94fe92d448ad3"
+  },
+  {
+    "path": "frozen/model_methods.R",
+    "sha256": "72767c63cae65f32681c17de5d7abae424bab8c275e3bfa89a1d5ee908b79ff2"
+  },
+  {
+    "path": "frozen/original_driver_array.R",
+    "sha256": "4143b1517ff9628a3cadba6e458a1ac604f885a52d5b0b8b1d1a2cc8c30eaaae"
+  },
+  {
+    "path": "frozen/original_merge_config.R",
+    "sha256": "0c30ab9b38e55e1772352a06fde4410b01848d4e822fecb0848bf89d0d01161f"
+  },
+  {
+    "path": "frozen/retry.R",
+    "sha256": "2993cc1804a714112318e3dcd7d915a34b3723acc095c652b2cb39a8a3ced007"
+  },
+  {
+    "path": "frozen/submit_all.sh",
+    "sha256": "5ad0fe1a3ee5ec10095044c118fd29c6cb34409682b2a3d8d330556581c907f9"
+  },
+  {
+    "path": "frozen/submit_logistic.sh",
+    "sha256": "ee4eb3523bb98a0154d87e63eeaf2e9a668c2699e6271e3c70c5ffda8751b232"
+  },
+  {
+    "path": "frozen/submit_preflight.sh",
+    "sha256": "c7e8b39bbfed4877c627e848d07b9133a0ba98e25f354746e36a17d19a1d0567"
+  },
+  {
+    "path": "frozen/summarize_run.R",
+    "sha256": "9eff41c63410221984fa8900612ae38c3898118058dd932697ae0c3af6401be6"
+  },
+  {
+    "path": "frozen/test_contract.R",
+    "sha256": "7ea9c95e2c6ad77de92f3adda51b4130523feac01da450e8c664cfb2c8071054"
+  },
+  {
+    "path": "frozen/test_interior.R",
+    "sha256": "f03e730206e942a91f31882b3ca9f4e0f53621a513c3bde26fe320f838cb15cb"
+  },
+  {
+    "path": "frozen/test_retained_diagnostics.R",
+    "sha256": "c27885b2b005546b1c27629e9d62f095b0e9ebec5820002d88778ff0f3e79c1e"
+  },
+  {
+    "path": "frozen/test_summary.R",
+    "sha256": "a61c7bb3d6ff79f17aceb4b74fbe6e4d965a690fb4b5908757b62ef39af50226"
+  },
+  {
+    "path": "frozen/validate_preflight.R",
+    "sha256": "767ee34fcd02ea3b710cdbb7c95a615c9627bd2a0706b1abcbaa02fad9f17009"
+  }
+]

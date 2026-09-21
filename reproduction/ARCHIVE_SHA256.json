@@ -1,0 +1,90 @@
+[
+  {
+    "path": "archive/llqr_multivar_iteration_diagnostics_20260406_033218.csv",
+    "sha256": "5f2f47edf51519fed74a9fc8764d9eebf66b1a80aeab4a0c079307b25b1ae731"
+  },
+  {
+    "path": "archive/llqr_multivar_iteration_raw_20260406_033218.csv",
+    "sha256": "9ca374e69c4ffb2ead9eccb6afd9574fe5023de485f53f78b75316968590aae3"
+  },
+  {
+    "path": "archive/llqr_multivar_iteration_reduction_20260406_033218.csv",
+    "sha256": "be5749cc606d95d7deb77565bb101f3924dccdfc2582bf1cded76c051ac3084d"
+  },
+  {
+    "path": "archive/llqr_multivar_iteration_summary_20260406_033218.csv",
+    "sha256": "125438914bc0573bc10b770c0adabc89b9b628be6c5883ab809307b547c2665f"
+  },
+  {
+    "path": "archive/logistic/build_lscpu.txt",
+    "sha256": "632e428083d250653262f4f07dc86f76628d5488b5af7f45bb5a512f60eac11f"
+  },
+  {
+    "path": "archive/logistic/build_uname.txt",
+    "sha256": "62a966fba23a53bb4af4125d0f291abf927b1483c4d1e8544b0cea60f04e49a2"
+  },
+  {
+    "path": "archive/logistic/compiler_flags.txt",
+    "sha256": "1a223bf4fda5771ca3f389b6c8631c41397d07359916801dc8a8b3d625edaef2"
+  },
+  {
+    "path": "archive/logistic/compiler_version.txt",
+    "sha256": "1e45ef4417f627cb9c9ffa36054e690772c8d09ac05df95fab63b76ade20a649"
+  },
+  {
+    "path": "archive/logistic/git_sha.txt",
+    "sha256": "a8d14327f692b3cf586a3040fd246196419df8a7d3542474f04a3331aded0483"
+  },
+  {
+    "path": "archive/logistic/run_config.txt",
+    "sha256": "f9b5831d26636f95e066dbf01d1c8bf4888f9bd22129034b10fc46b70b272890"
+  },
+  {
+    "path": "archive/logistic/source_sha256.txt",
+    "sha256": "5777ceb611e935665c7f49cf4421e1ad3155fe8a1c81f189d1c55c7ba7904cd0"
+  },
+  {
+    "path": "archive/logistic_screening.csv",
+    "sha256": "f1507f3c4e5a59b140d761f977de18742127cee51c34fea38e3f8ae1f3d14525"
+  },
+  {
+    "path": "archive/logistic_summary.csv",
+    "sha256": "a940bb175ea484664e345853f81c544072ef045fe8cc0074017138da4f41fd02"
+  },
+  {
+    "path": "archive/original/build_lscpu.txt",
+    "sha256": "fefe535a12e53fe9a852965b5e2ee556cf6bc37b817df703545e4f34f4bd2daf"
+  },
+  {
+    "path": "archive/original/build_uname.txt",
+    "sha256": "a49ede42b0176819fb0e0dc249e7fc667f850a21ea57cde30f2131eed998d279"
+  },
+  {
+    "path": "archive/original/compiler_flags.txt",
+    "sha256": "1a223bf4fda5771ca3f389b6c8631c41397d07359916801dc8a8b3d625edaef2"
+  },
+  {
+    "path": "archive/original/compiler_version.txt",
+    "sha256": "af1ae9c795730cde2884725b22bf09bca3910995a3c5243540815558535d55ee"
+  },
+  {
+    "path": "archive/original/git_sha.txt",
+    "sha256": "eb200d785ebce06aa7e2bcd88d5d2dc413ca9dca4a44b2d919b2b9d908b4c43d"
+  },
+  {
+    "path": "archive/original/run_config.txt",
+    "sha256": "daf2b63cf610825ce797b434142892bdc24fb853858bdb1543cffc0c9d0897a1"
+  },
+  {
+    "path": "archive/original/source_sha256.txt",
+    "sha256": "3f7d33de3f340723954b9e0424f91d9e02cb8063f551b82eb15ef3e6a5a5d1e5"
+  },
+  {
+    "path": "archive/original_screening.csv",
+    "sha256": "e6e685b962df5553221efec61c85cfe3c1cb61cc849513d8dc1b66268bd880ae"
+  },
+  {
+    "path": "archive/original_summary.csv",
+    "sha256": "608c2b637743f130a49c6851998e10fa5c367a33720bf91d8e8d99c8d2d4fd22"
+  }
+]

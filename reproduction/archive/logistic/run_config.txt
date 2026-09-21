@@ -1,0 +1,7 @@
+run_tag=llqr_c2_logistic_rep500_seed2025_0863a92_20260914_112526
+num_rep=500
+seed_base=2025
+cache_flags=27
+provider_flags=1
+design=llqr_case2_logistic_variance1
+evaluation_interval=0.1,0.9

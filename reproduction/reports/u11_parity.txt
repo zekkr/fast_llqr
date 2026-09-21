@@ -1,0 +1,10 @@
+
+Attaching package: ‘fastllqr’
+
+The following objects are masked _by_ ‘.GlobalEnv’:
+
+    llqr_seq_ppro, tvcqr_seq_ppro
+
+PASS datasets=60 points=8652 H_mismatches=0 seq_fallback=0 full_active_recovery=1481
+max_estimate_error  max_objective_gap  max_KKT_violation 
+      1.136868e-13       5.752049e-14       5.662137e-15 

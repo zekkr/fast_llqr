@@ -1,3 +1,10 @@
+## Paper U11 implementation and reproduction
+
+The formal U11 entry is `R/u11_functions.R`; package synchronization, fixed-source
+simulation commands, archived summaries and environment evidence are documented
+in [reproduction/README.md](reproduction/README.md). See
+[release status](reproduction/RELEASE_STATUS.md) before using a release URL.
+
 # Fast Local Linear Quantile Regression Research
 
 A comprehensive simulation study comparing Local Linear Quantile Regression (LLQR) and Time-Varying Coefficient Quantile Regression (TVCQR).

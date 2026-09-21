@@ -1,0 +1,3529 @@
+{
+  "scope": "Summary-level arithmetic and displayed-rounding check; no simulation fits or raw replication reconstruction",
+  "source_rows": 144,
+  "unique_source_keys": 144,
+  "all_current_source_rows_have_500_present": true,
+  "printed_numeric_checks": 486,
+  "printed_numeric_mismatches": [],
+  "mapped_value_checks": 720,
+  "mapped_value_mismatches": [],
+  "checks": [
+    {
+      "label": "main T1 case=1 n=1000 direct_baseline time_mean_sec",
+      "printed": "1.70",
+      "actual": 1.69641,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=1000 direct_baseline time_min_sec",
+      "printed": "1.55",
+      "actual": 1.554,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=1000 direct_baseline time_max_sec",
+      "printed": "2.04",
+      "actual": 2.043,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=1000 unified_u11 time_mean_sec",
+      "printed": "0.0085",
+      "actual": 0.00845,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=1000 unified_u11 time_min_sec",
+      "printed": "0.0070",
+      "actual": 0.00699999999999967,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=1000 unified_u11 time_max_sec",
+      "printed": "0.024",
+      "actual": 0.024,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 direct_baseline time_mean_sec",
+      "printed": "2.44",
+      "actual": 2.43728,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 direct_baseline time_min_sec",
+      "printed": "2.27",
+      "actual": 2.267,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 direct_baseline time_max_sec",
+      "printed": "2.73",
+      "actual": 2.733,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 unified_u11 time_mean_sec",
+      "printed": "0.026",
+      "actual": 0.026054,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 unified_u11 time_min_sec",
+      "printed": "0.024",
+      "actual": 0.024,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=2000 unified_u11 time_max_sec",
+      "printed": "0.039",
+      "actual": 0.039,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 direct_baseline time_mean_sec",
+      "printed": "8.27",
+      "actual": 8.270386,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 direct_baseline time_min_sec",
+      "printed": "7.80",
+      "actual": 7.798,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 direct_baseline time_max_sec",
+      "printed": "8.95",
+      "actual": 8.947,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 unified_u11 time_mean_sec",
+      "printed": "0.15",
+      "actual": 0.1463,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 unified_u11 time_min_sec",
+      "printed": "0.14",
+      "actual": 0.136,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=5000 unified_u11 time_max_sec",
+      "printed": "0.17",
+      "actual": 0.167,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 direct_baseline time_mean_sec",
+      "printed": "30.35",
+      "actual": 30.347338,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 direct_baseline time_min_sec",
+      "printed": "29.25",
+      "actual": 29.247,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 direct_baseline time_max_sec",
+      "printed": "31.57",
+      "actual": 31.573,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 unified_u11 time_mean_sec",
+      "printed": "0.61",
+      "actual": 0.614944,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 unified_u11 time_min_sec",
+      "printed": "0.59",
+      "actual": 0.589000000000002,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=1 n=10000 unified_u11 time_max_sec",
+      "printed": "0.64",
+      "actual": 0.644000000000005,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 direct_baseline time_mean_sec",
+      "printed": "1.71",
+      "actual": 1.708174,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 direct_baseline time_min_sec",
+      "printed": "1.56",
+      "actual": 1.557,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 direct_baseline time_max_sec",
+      "printed": "2.03",
+      "actual": 2.032,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 unified_u11 time_mean_sec",
+      "printed": "0.0094",
+      "actual": 0.009432,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 unified_u11 time_min_sec",
+      "printed": "0.0080",
+      "actual": 0.0079999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=1000 unified_u11 time_max_sec",
+      "printed": "0.026",
+      "actual": 0.026,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 direct_baseline time_mean_sec",
+      "printed": "2.56",
+      "actual": 2.558276,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 direct_baseline time_min_sec",
+      "printed": "2.42",
+      "actual": 2.416,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 direct_baseline time_max_sec",
+      "printed": "2.90",
+      "actual": 2.899,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 unified_u11 time_mean_sec",
+      "printed": "0.029",
+      "actual": 0.029482,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 unified_u11 time_min_sec",
+      "printed": "0.027",
+      "actual": 0.0270000000000001,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=2000 unified_u11 time_max_sec",
+      "printed": "0.049",
+      "actual": 0.049,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 direct_baseline time_mean_sec",
+      "printed": "9.15",
+      "actual": 9.146076,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 direct_baseline time_min_sec",
+      "printed": "8.51",
+      "actual": 8.509,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 direct_baseline time_max_sec",
+      "printed": "9.91",
+      "actual": 9.911,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 unified_u11 time_mean_sec",
+      "printed": "0.17",
+      "actual": 0.165506,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 unified_u11 time_min_sec",
+      "printed": "0.16",
+      "actual": 0.156000000000001,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=5000 unified_u11 time_max_sec",
+      "printed": "0.18",
+      "actual": 0.182,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 direct_baseline time_mean_sec",
+      "printed": "34.04",
+      "actual": 34.036438,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 direct_baseline time_min_sec",
+      "printed": "33.13",
+      "actual": 33.126,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 direct_baseline time_max_sec",
+      "printed": "35.08",
+      "actual": 35.084,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 unified_u11 time_mean_sec",
+      "printed": "0.69",
+      "actual": 0.68912,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 unified_u11 time_min_sec",
+      "printed": "0.67",
+      "actual": 0.670999999999999,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=2 n=10000 unified_u11 time_max_sec",
+      "printed": "0.75",
+      "actual": 0.747999999999998,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 direct_baseline time_mean_sec",
+      "printed": "4.04",
+      "actual": 4.043678,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 direct_baseline time_min_sec",
+      "printed": "3.81",
+      "actual": 3.808,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 direct_baseline time_max_sec",
+      "printed": "4.65",
+      "actual": 4.651,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 unified_u11 time_mean_sec",
+      "printed": "0.025",
+      "actual": 0.02519,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 unified_u11 time_min_sec",
+      "printed": "0.022",
+      "actual": 0.022,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=1000 unified_u11 time_max_sec",
+      "printed": "0.044",
+      "actual": 0.0440000000000005,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 direct_baseline time_mean_sec",
+      "printed": "11.65",
+      "actual": 11.645464,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 direct_baseline time_min_sec",
+      "printed": "11.00",
+      "actual": 11.003,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 direct_baseline time_max_sec",
+      "printed": "12.70",
+      "actual": 12.702,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 unified_u11 time_mean_sec",
+      "printed": "0.065",
+      "actual": 0.064548,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 unified_u11 time_min_sec",
+      "printed": "0.059",
+      "actual": 0.0589999999999993,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=2000 unified_u11 time_max_sec",
+      "printed": "0.078",
+      "actual": 0.078,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 direct_baseline time_mean_sec",
+      "printed": "66.89",
+      "actual": 66.891084,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 direct_baseline time_min_sec",
+      "printed": "63.83",
+      "actual": 63.834,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 direct_baseline time_max_sec",
+      "printed": "72.24",
+      "actual": 72.24,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 unified_u11 time_mean_sec",
+      "printed": "0.29",
+      "actual": 0.293512,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 unified_u11 time_min_sec",
+      "printed": "0.28",
+      "actual": 0.278,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=5000 unified_u11 time_max_sec",
+      "printed": "0.32",
+      "actual": 0.322000000000003,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 direct_baseline time_mean_sec",
+      "printed": "236.07",
+      "actual": 236.065826,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 direct_baseline time_min_sec",
+      "printed": "230.87",
+      "actual": 230.867,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 direct_baseline time_max_sec",
+      "printed": "239.84",
+      "actual": 239.836,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 unified_u11 time_mean_sec",
+      "printed": "0.97",
+      "actual": 0.971674,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 unified_u11 time_min_sec",
+      "printed": "0.94",
+      "actual": 0.939999999999998,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=3 n=10000 unified_u11 time_max_sec",
+      "printed": "1.04",
+      "actual": 1.03800000000001,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 direct_baseline time_mean_sec",
+      "printed": "4.08",
+      "actual": 4.075728,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 direct_baseline time_min_sec",
+      "printed": "3.83",
+      "actual": 3.831,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 direct_baseline time_max_sec",
+      "printed": "4.69",
+      "actual": 4.693,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 unified_u11 time_mean_sec",
+      "printed": "0.026",
+      "actual": 0.025646,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 unified_u11 time_min_sec",
+      "printed": "0.024",
+      "actual": 0.024,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=1000 unified_u11 time_max_sec",
+      "printed": "0.029",
+      "actual": 0.029,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 direct_baseline time_mean_sec",
+      "printed": "12.03",
+      "actual": 12.029576,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 direct_baseline time_min_sec",
+      "printed": "11.27",
+      "actual": 11.268,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 direct_baseline time_max_sec",
+      "printed": "13.23",
+      "actual": 13.229,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 unified_u11 time_mean_sec",
+      "printed": "0.074",
+      "actual": 0.073932,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 unified_u11 time_min_sec",
+      "printed": "0.071",
+      "actual": 0.0709999999999997,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=2000 unified_u11 time_max_sec",
+      "printed": "0.080",
+      "actual": 0.0799999999999983,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 direct_baseline time_mean_sec",
+      "printed": "71.63",
+      "actual": 71.627712,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 direct_baseline time_min_sec",
+      "printed": "69.00",
+      "actual": 68.995,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 direct_baseline time_max_sec",
+      "printed": "75.93",
+      "actual": 75.926,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 unified_u11 time_mean_sec",
+      "printed": "0.38",
+      "actual": 0.381968,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 unified_u11 time_min_sec",
+      "printed": "0.36",
+      "actual": 0.361,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=5000 unified_u11 time_max_sec",
+      "printed": "0.44",
+      "actual": 0.441999999999993,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 direct_baseline time_mean_sec",
+      "printed": "265.66",
+      "actual": 265.663842,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 direct_baseline time_min_sec",
+      "printed": "262.00",
+      "actual": 262.002,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 direct_baseline time_max_sec",
+      "printed": "270.04",
+      "actual": 270.039,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 unified_u11 time_mean_sec",
+      "printed": "1.35",
+      "actual": 1.34793,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 unified_u11 time_min_sec",
+      "printed": "1.27",
+      "actual": 1.27199999999999,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T1 case=4 n=10000 unified_u11 time_max_sec",
+      "printed": "1.58",
+      "actual": 1.575,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 gamma",
+      "printed": "0.03",
+      "actual": 0.0320494439794408,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 first_mean",
+      "printed": "1.00",
+      "actual": 0.996484447006624,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 first_min",
+      "printed": "0.98",
+      "actual": 0.978562421185372,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 first_max",
+      "printed": "1.00",
+      "actual": 1.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 F_mean",
+      "printed": "2.802",
+      "actual": 2.802,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 F_median",
+      "printed": "2",
+      "actual": 2.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 F_q90",
+      "printed": "5",
+      "actual": 5.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 F_max",
+      "printed": "17",
+      "actual": 17.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 R_mean",
+      "printed": "2.926",
+      "actual": 2.926,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 R_min",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 R_max",
+      "printed": "18",
+      "actual": 18.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=1000 all_grid_no_repair",
+      "printed": "0.08",
+      "actual": 0.084,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 gamma",
+      "printed": "0.03",
+      "actual": 0.026739033350148,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 first_mean",
+      "printed": "1.00",
+      "actual": 0.999387213334509,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 first_min",
+      "printed": "1.00",
+      "actual": 0.996827411167513,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 first_max",
+      "printed": "1.00",
+      "actual": 1.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 F_mean",
+      "printed": "0.978",
+      "actual": 0.978,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 F_median",
+      "printed": "1",
+      "actual": 1.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 F_q90",
+      "printed": "2",
+      "actual": 2.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 F_max",
+      "printed": "5",
+      "actual": 5.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 R_mean",
+      "printed": "0.986",
+      "actual": 0.986,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 R_min",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 R_max",
+      "printed": "6",
+      "actual": 6.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=2000 all_grid_no_repair",
+      "printed": "0.42",
+      "actual": 0.416,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 gamma",
+      "printed": "0.02",
+      "actual": 0.0207203612237177,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 first_mean",
+      "printed": "1.00",
+      "actual": 0.999981996525259,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 first_min",
+      "printed": "1.00",
+      "actual": 0.999494183105716,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 first_max",
+      "printed": "1.00",
+      "actual": 1.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 F_mean",
+      "printed": "0.072",
+      "actual": 0.072,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 F_median",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 F_q90",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 F_max",
+      "printed": "2",
+      "actual": 2.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 R_mean",
+      "printed": "0.072",
+      "actual": 0.072,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 R_min",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 R_max",
+      "printed": "2",
+      "actual": 2.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=5000 all_grid_no_repair",
+      "printed": "0.93",
+      "actual": 0.932,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 gamma",
+      "printed": "0.02",
+      "actual": 0.0169260158132766,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 first_mean",
+      "printed": "1.00",
+      "actual": 0.999999498641553,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 first_min",
+      "printed": "1.00",
+      "actual": 0.999874071275658,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 first_max",
+      "printed": "1.00",
+      "actual": 1.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 F_mean",
+      "printed": "0.004",
+      "actual": 0.004,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 F_median",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 F_q90",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 F_max",
+      "printed": "1",
+      "actual": 1.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 R_mean",
+      "printed": "0.004",
+      "actual": 0.004,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 R_min",
+      "printed": "0",
+      "actual": 0.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 R_max",
+      "printed": "1",
+      "actual": 1.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=1 n=10000 all_grid_no_repair",
+      "printed": "1.00",
+      "actual": 0.996,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 gamma",
+      "printed": "0.01",
+      "actual": 0.0115787207822088,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 first_mean",
+      "printed": "0.75",
+      "actual": 0.753095095095095,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 first_min",
+      "printed": "0.69",
+      "actual": 0.687687687687688,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 first_max",
+      "printed": "0.81",
+      "actual": 0.814814814814815,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 F_mean",
+      "printed": "247",
+      "actual": 246.658,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 F_median",
+      "printed": "247",
+      "actual": 247.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 F_q90",
+      "printed": "276",
+      "actual": 276.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 F_max",
+      "printed": "312",
+      "actual": 312.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 R_mean",
+      "printed": "419",
+      "actual": 419.316,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 R_min",
+      "printed": "276",
+      "actual": 276.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 R_max",
+      "printed": "561",
+      "actual": 561.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=1000 all_grid_no_repair",
+      "printed": "0.00",
+      "actual": 0.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 gamma",
+      "printed": "0.01",
+      "actual": 0.0140643005877905,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 first_mean",
+      "printed": "0.90",
+      "actual": 0.898168084042021,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 first_min",
+      "printed": "0.86",
+      "actual": 0.861930965482741,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 first_max",
+      "printed": "0.94",
+      "actual": 0.942471235617809,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 F_mean",
+      "printed": "204",
+      "actual": 203.562,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 F_median",
+      "printed": "203",
+      "actual": 203.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 F_q90",
+      "printed": "236",
+      "actual": 236.1,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 F_max",
+      "printed": "276",
+      "actual": 276.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 R_mean",
+      "printed": "264",
+      "actual": 264.464,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 R_min",
+      "printed": "140",
+      "actual": 140.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 R_max",
+      "printed": "377",
+      "actual": 377.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=2000 all_grid_no_repair",
+      "printed": "0.00",
+      "actual": 0.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 gamma",
+      "printed": "0.02",
+      "actual": 0.0170428424351503,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 first_mean",
+      "printed": "0.99",
+      "actual": 0.987338667733547,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 first_min",
+      "printed": "0.98",
+      "actual": 0.977995599119824,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 first_max",
+      "printed": "0.99",
+      "actual": 0.994198839767954,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 F_mean",
+      "printed": "63",
+      "actual": 63.294,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 F_median",
+      "printed": "63",
+      "actual": 63.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 F_q90",
+      "printed": "81",
+      "actual": 81.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 F_max",
+      "printed": "110",
+      "actual": 110.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 R_mean",
+      "printed": "66",
+      "actual": 66.292,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 R_min",
+      "printed": "29",
+      "actual": 29.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 R_max",
+      "printed": "116",
+      "actual": 116.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=5000 all_grid_no_repair",
+      "printed": "0.00",
+      "actual": 0.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 gamma",
+      "printed": "0.02",
+      "actual": 0.0189621746622878,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 first_mean",
+      "printed": "1.00",
+      "actual": 0.998973897389739,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 first_min",
+      "printed": "1.00",
+      "actual": 0.997599759975998,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 first_max",
+      "printed": "1.00",
+      "actual": 0.999899989999,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 F_mean",
+      "printed": "10",
+      "actual": 10.26,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 F_median",
+      "printed": "10",
+      "actual": 10.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 F_q90",
+      "printed": "16",
+      "actual": 16.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 F_max",
+      "printed": "24",
+      "actual": 24.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 R_mean",
+      "printed": "10",
+      "actual": 10.328,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 R_min",
+      "printed": "1",
+      "actual": 1.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 R_max",
+      "printed": "24",
+      "actual": 24.0,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T2 case=3 n=10000 all_grid_no_repair",
+      "printed": "0.00",
+      "actual": 0.0,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=1000 gamma",
+      "printed": "0.032",
+      "actual": 0.0320494439794408,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=1000 mean_max_S",
+      "printed": "23",
+      "actual": 23.048,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=1000 over_nb",
+      "printed": "0.092",
+      "actual": 0.09175574066917,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=1000 over_nb_gamma_log",
+      "printed": "1.54",
+      "actual": 1.54082590729369,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=2000 gamma",
+      "printed": "0.027",
+      "actual": 0.026739033350148,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=2000 mean_max_S",
+      "printed": "32",
+      "actual": 31.816,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=2000 over_nb",
+      "printed": "0.073",
+      "actual": 0.0727480876605991,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=2000 over_nb_gamma_log",
+      "printed": "1.65",
+      "actual": 1.64891771733126,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=5000 gamma",
+      "printed": "0.021",
+      "actual": 0.0207203612237177,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=5000 mean_max_S",
+      "printed": "48",
+      "actual": 48.038,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=5000 over_nb",
+      "printed": "0.053",
+      "actual": 0.0527726513793393,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=5000 over_nb_gamma_log",
+      "printed": "1.75",
+      "actual": 1.75458415103944,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=10000 gamma",
+      "printed": "0.017",
+      "actual": 0.0169260158132766,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=10000 mean_max_S",
+      "printed": "66",
+      "actual": 65.61,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=10000 over_nb",
+      "printed": "0.041",
+      "actual": 0.0413971113713455,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=1 n=10000 over_nb_gamma_log",
+      "printed": "1.82",
+      "actual": 1.82066580008207,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=1000 gamma",
+      "printed": "0.012",
+      "actual": 0.0115787207822088,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=1000 mean_max_S",
+      "printed": "19",
+      "actual": 18.678,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=1000 over_nb",
+      "printed": "0.07",
+      "actual": 0.0743584573159822,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=1000 over_nb_gamma_log",
+      "printed": "1.90",
+      "actual": 1.90266269630808,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=2000 gamma",
+      "printed": "0.014",
+      "actual": 0.0140643005877905,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=2000 mean_max_S",
+      "printed": "26",
+      "actual": 26.326,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=2000 over_nb",
+      "printed": "0.06",
+      "actual": 0.060195063985194,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=2000 over_nb_gamma_log",
+      "printed": "1.91",
+      "actual": 1.91415728292249,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=5000 gamma",
+      "printed": "0.017",
+      "actual": 0.0170428424351503,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=5000 mean_max_S",
+      "printed": "46",
+      "actual": 46.462,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=5000 over_nb",
+      "printed": "0.05",
+      "actual": 0.0510413199630889,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=5000 over_nb_gamma_log",
+      "printed": "1.93",
+      "actual": 1.93364275257349,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=10000 gamma",
+      "printed": "0.019",
+      "actual": 0.0189621746622878,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=10000 mean_max_S",
+      "printed": "75",
+      "actual": 75.282,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=10000 over_nb",
+      "printed": "0.05",
+      "actual": 0.0474997308071579,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "main T3 case=3 n=10000 over_nb_gamma_log",
+      "printed": "1.92",
+      "actual": 1.91764989351228,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=1000 direct_baseline mean",
+      "printed": "1.622",
+      "actual": 1.62247,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=1000 direct_baseline range",
+      "printed": "0.3090",
+      "actual": 0.30900000000000016,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=2000 direct_baseline mean",
+      "printed": "2.389",
+      "actual": 2.389418,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=2000 direct_baseline range",
+      "printed": "0.6340",
+      "actual": 0.6339999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=5000 direct_baseline mean",
+      "printed": "6.714",
+      "actual": 6.713678,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=5000 direct_baseline range",
+      "printed": "1.423",
+      "actual": 1.423,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=10000 direct_baseline mean",
+      "printed": "20.04",
+      "actual": 20.043712,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=10000 direct_baseline range",
+      "printed": "2.280",
+      "actual": 2.2799999999999976,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=1000 unified_u11 mean",
+      "printed": "0.0075",
+      "actual": 0.00753800000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=1000 unified_u11 range",
+      "printed": "0.0160",
+      "actual": 0.01600000000000022,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=2000 unified_u11 mean",
+      "printed": "0.0227",
+      "actual": 0.022744,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=2000 unified_u11 range",
+      "printed": "0.0230",
+      "actual": 0.023,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=5000 unified_u11 mean",
+      "printed": "0.1196",
+      "actual": 0.119618,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=5000 unified_u11 range",
+      "printed": "0.0360",
+      "actual": 0.03600000000000099,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=10000 unified_u11 mean",
+      "printed": "0.4998",
+      "actual": 0.49982,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.2 n=10000 unified_u11 range",
+      "printed": "0.0580",
+      "actual": 0.05800000000000005,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=1000 direct_baseline mean",
+      "printed": "1.696",
+      "actual": 1.69641,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=1000 direct_baseline range",
+      "printed": "0.4890",
+      "actual": 0.4890000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=2000 direct_baseline mean",
+      "printed": "2.437",
+      "actual": 2.43728,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=2000 direct_baseline range",
+      "printed": "0.4660",
+      "actual": 0.4660000000000002,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=5000 direct_baseline mean",
+      "printed": "8.270",
+      "actual": 8.270386,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=5000 direct_baseline range",
+      "printed": "1.149",
+      "actual": 1.1489999999999991,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=10000 direct_baseline mean",
+      "printed": "30.35",
+      "actual": 30.347338,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=10000 direct_baseline range",
+      "printed": "2.326",
+      "actual": 2.3260000000000005,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=1000 unified_u11 mean",
+      "printed": "0.0084",
+      "actual": 0.00845,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=1000 unified_u11 range",
+      "printed": "0.0170",
+      "actual": 0.01700000000000033,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=2000 unified_u11 mean",
+      "printed": "0.0261",
+      "actual": 0.026054,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=2000 unified_u11 range",
+      "printed": "0.0150",
+      "actual": 0.015,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=5000 unified_u11 mean",
+      "printed": "0.1463",
+      "actual": 0.1463,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=5000 unified_u11 range",
+      "printed": "0.0310",
+      "actual": 0.031,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=10000 unified_u11 mean",
+      "printed": "0.6149",
+      "actual": 0.614944,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.5 n=10000 unified_u11 range",
+      "printed": "0.0550",
+      "actual": 0.055000000000003046,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=1000 direct_baseline mean",
+      "printed": "1.641",
+      "actual": 1.641436,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=1000 direct_baseline range",
+      "printed": "0.3050",
+      "actual": 0.30500000000000016,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=2000 direct_baseline mean",
+      "printed": "2.472",
+      "actual": 2.471628,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=2000 direct_baseline range",
+      "printed": "0.3700",
+      "actual": 0.3700000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=5000 direct_baseline mean",
+      "printed": "8.956",
+      "actual": 8.955708,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=5000 direct_baseline range",
+      "printed": "1.174",
+      "actual": 1.1739999999999995,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=10000 direct_baseline mean",
+      "printed": "34.52",
+      "actual": 34.520444,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=10000 direct_baseline range",
+      "printed": "2.946",
+      "actual": 2.945999999999998,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=1000 unified_u11 mean",
+      "printed": "0.0078",
+      "actual": 0.007784,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=1000 unified_u11 range",
+      "printed": "0.0100",
+      "actual": 0.00999999999999977,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=2000 unified_u11 mean",
+      "printed": "0.0237",
+      "actual": 0.023662,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=2000 unified_u11 range",
+      "printed": "0.0080",
+      "actual": 0.008,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=5000 unified_u11 mean",
+      "printed": "0.1262",
+      "actual": 0.126212,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=5000 unified_u11 range",
+      "printed": "0.0690",
+      "actual": 0.069,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=10000 unified_u11 mean",
+      "printed": "0.5170",
+      "actual": 0.517018,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=1 tau=0.8 n=10000 unified_u11 range",
+      "printed": "0.0490",
+      "actual": 0.04900000000000504,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=1000 direct_baseline mean",
+      "printed": "1.657",
+      "actual": 1.65741,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=1000 direct_baseline range",
+      "printed": "0.3770",
+      "actual": 0.377,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=2000 direct_baseline mean",
+      "printed": "2.378",
+      "actual": 2.378096,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=2000 direct_baseline range",
+      "printed": "0.3950",
+      "actual": 0.395,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=5000 direct_baseline mean",
+      "printed": "7.285",
+      "actual": 7.28456,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=5000 direct_baseline range",
+      "printed": "1.058",
+      "actual": 1.0579999999999998,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=10000 direct_baseline mean",
+      "printed": "22.78",
+      "actual": 22.780426,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=10000 direct_baseline range",
+      "printed": "1.829",
+      "actual": 1.8290000000000006,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=1000 unified_u11 mean",
+      "printed": "0.0087",
+      "actual": 0.008712,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=1000 unified_u11 range",
+      "printed": "0.0180",
+      "actual": 0.01800000000000033,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=2000 unified_u11 mean",
+      "printed": "0.0264",
+      "actual": 0.026396,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=2000 unified_u11 range",
+      "printed": "0.0240",
+      "actual": 0.024,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=5000 unified_u11 mean",
+      "printed": "0.1409",
+      "actual": 0.140922,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=5000 unified_u11 range",
+      "printed": "0.0180",
+      "actual": 0.017999999999999988,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=10000 unified_u11 mean",
+      "printed": "0.5766",
+      "actual": 0.576602,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.2 n=10000 unified_u11 range",
+      "printed": "0.0520",
+      "actual": 0.052000000000000934,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=1000 direct_baseline mean",
+      "printed": "1.708",
+      "actual": 1.708174,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=1000 direct_baseline range",
+      "printed": "0.4750",
+      "actual": 0.4750000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=2000 direct_baseline mean",
+      "printed": "2.558",
+      "actual": 2.558276,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=2000 direct_baseline range",
+      "printed": "0.4830",
+      "actual": 0.4830000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=5000 direct_baseline mean",
+      "printed": "9.146",
+      "actual": 9.146076,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=5000 direct_baseline range",
+      "printed": "1.402",
+      "actual": 1.4019999999999992,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=10000 direct_baseline mean",
+      "printed": "34.04",
+      "actual": 34.036438,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=10000 direct_baseline range",
+      "printed": "1.958",
+      "actual": 1.9580000000000055,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=1000 unified_u11 mean",
+      "printed": "0.0094",
+      "actual": 0.009432,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=1000 unified_u11 range",
+      "printed": "0.0180",
+      "actual": 0.0180000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=2000 unified_u11 mean",
+      "printed": "0.0295",
+      "actual": 0.029482,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=2000 unified_u11 range",
+      "printed": "0.0220",
+      "actual": 0.0219999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=5000 unified_u11 mean",
+      "printed": "0.1655",
+      "actual": 0.165506,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=5000 unified_u11 range",
+      "printed": "0.0260",
+      "actual": 0.025999999999998996,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=10000 unified_u11 mean",
+      "printed": "0.6891",
+      "actual": 0.68912,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.5 n=10000 unified_u11 range",
+      "printed": "0.0770",
+      "actual": 0.07699999999999896,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=1000 direct_baseline mean",
+      "printed": "1.639",
+      "actual": 1.63906,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=1000 direct_baseline range",
+      "printed": "0.2530",
+      "actual": 0.2529999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=2000 direct_baseline mean",
+      "printed": "2.573",
+      "actual": 2.573438,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=2000 direct_baseline range",
+      "printed": "0.3980",
+      "actual": 0.3979999999999997,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=5000 direct_baseline mean",
+      "printed": "9.936",
+      "actual": 9.93644,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=5000 direct_baseline range",
+      "printed": "1.133",
+      "actual": 1.1329999999999991,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=10000 direct_baseline mean",
+      "printed": "38.75",
+      "actual": 38.752714,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=10000 direct_baseline range",
+      "printed": "2.089",
+      "actual": 2.0889999999999986,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=1000 unified_u11 mean",
+      "printed": "0.0087",
+      "actual": 0.008718,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=1000 unified_u11 range",
+      "printed": "0.0030",
+      "actual": 0.0030000000000005404,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=2000 unified_u11 mean",
+      "printed": "0.0269",
+      "actual": 0.026944,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=2000 unified_u11 range",
+      "printed": "0.0090",
+      "actual": 0.0089999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=5000 unified_u11 mean",
+      "printed": "0.1444",
+      "actual": 0.144426,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=5000 unified_u11 range",
+      "printed": "0.0210",
+      "actual": 0.02100000000000099,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=10000 unified_u11 mean",
+      "printed": "0.5810",
+      "actual": 0.581034,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=2 tau=0.8 n=10000 unified_u11 range",
+      "printed": "0.0550",
+      "actual": 0.05499999999999705,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=1000 direct_baseline mean",
+      "printed": "3.992",
+      "actual": 3.991832,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=1000 direct_baseline range",
+      "printed": "0.7570",
+      "actual": 0.7569999999999997,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=2000 direct_baseline mean",
+      "printed": "11.44",
+      "actual": 11.444416,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=2000 direct_baseline range",
+      "printed": "1.669",
+      "actual": 1.6690000000000005,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=5000 direct_baseline mean",
+      "printed": "65.23",
+      "actual": 65.228328,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=5000 direct_baseline range",
+      "printed": "9.200",
+      "actual": 9.199999999999996,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=10000 direct_baseline mean",
+      "printed": "227.6",
+      "actual": 227.631268,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=10000 direct_baseline range",
+      "printed": "11.46",
+      "actual": 11.457999999999998,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=1000 unified_u11 mean",
+      "printed": "0.0230",
+      "actual": 0.023028,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=1000 unified_u11 range",
+      "printed": "0.0090",
+      "actual": 0.0090000000000004,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=2000 unified_u11 mean",
+      "printed": "0.0568",
+      "actual": 0.05678,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=2000 unified_u11 range",
+      "printed": "0.0360",
+      "actual": 0.036,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=5000 unified_u11 mean",
+      "printed": "0.2458",
+      "actual": 0.245824,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=5000 unified_u11 range",
+      "printed": "0.0430",
+      "actual": 0.04300000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=10000 unified_u11 mean",
+      "printed": "0.8107",
+      "actual": 0.810676,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.2 n=10000 unified_u11 range",
+      "printed": "0.2590",
+      "actual": 0.2590000000000079,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=1000 direct_baseline mean",
+      "printed": "4.044",
+      "actual": 4.043678,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=1000 direct_baseline range",
+      "printed": "0.8430",
+      "actual": 0.843,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=2000 direct_baseline mean",
+      "printed": "11.65",
+      "actual": 11.645464,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=2000 direct_baseline range",
+      "printed": "1.699",
+      "actual": 1.6989999999999998,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=5000 direct_baseline mean",
+      "printed": "66.89",
+      "actual": 66.891084,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=5000 direct_baseline range",
+      "printed": "8.406",
+      "actual": 8.405999999999992,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=10000 direct_baseline mean",
+      "printed": "236.1",
+      "actual": 236.065826,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=10000 direct_baseline range",
+      "printed": "8.969",
+      "actual": 8.969000000000023,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=1000 unified_u11 mean",
+      "printed": "0.0252",
+      "actual": 0.02519,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=1000 unified_u11 range",
+      "printed": "0.0220",
+      "actual": 0.0220000000000005,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=2000 unified_u11 mean",
+      "printed": "0.0645",
+      "actual": 0.064548,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=2000 unified_u11 range",
+      "printed": "0.0190",
+      "actual": 0.019000000000000697,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=5000 unified_u11 mean",
+      "printed": "0.2935",
+      "actual": 0.293512,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=5000 unified_u11 range",
+      "printed": "0.0440",
+      "actual": 0.04400000000000298,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=10000 unified_u11 mean",
+      "printed": "0.9717",
+      "actual": 0.971674,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.5 n=10000 unified_u11 range",
+      "printed": "0.0980",
+      "actual": 0.09800000000001208,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=1000 direct_baseline mean",
+      "printed": "4.022",
+      "actual": 4.02169,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=1000 direct_baseline range",
+      "printed": "0.9130",
+      "actual": 0.9130000000000003,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=2000 direct_baseline mean",
+      "printed": "11.46",
+      "actual": 11.463208,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=2000 direct_baseline range",
+      "printed": "1.693",
+      "actual": 1.6929999999999996,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=5000 direct_baseline mean",
+      "printed": "65.10",
+      "actual": 65.097066,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=5000 direct_baseline range",
+      "printed": "6.482",
+      "actual": 6.481999999999999,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=10000 direct_baseline mean",
+      "printed": "227.8",
+      "actual": 227.763226,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=10000 direct_baseline range",
+      "printed": "10.26",
+      "actual": 10.254999999999995,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=1000 unified_u11 mean",
+      "printed": "0.0229",
+      "actual": 0.022918,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=1000 unified_u11 range",
+      "printed": "0.0070",
+      "actual": 0.006999999999999999,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=2000 unified_u11 mean",
+      "printed": "0.0562",
+      "actual": 0.056178,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=2000 unified_u11 range",
+      "printed": "0.0110",
+      "actual": 0.011000000000001203,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=5000 unified_u11 mean",
+      "printed": "0.2445",
+      "actual": 0.244504,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=5000 unified_u11 range",
+      "printed": "0.0390",
+      "actual": 0.039000000000002005,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=10000 unified_u11 mean",
+      "printed": "0.8044",
+      "actual": 0.804424,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=3 tau=0.8 n=10000 unified_u11 range",
+      "printed": "0.2140",
+      "actual": 0.21400000000002295,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=1000 direct_baseline mean",
+      "printed": "3.996",
+      "actual": 3.995542,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=1000 direct_baseline range",
+      "printed": "0.8790",
+      "actual": 0.8790000000000004,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=2000 direct_baseline mean",
+      "printed": "11.68",
+      "actual": 11.683496,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=2000 direct_baseline range",
+      "printed": "1.820",
+      "actual": 1.8200000000000003,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=5000 direct_baseline mean",
+      "printed": "68.29",
+      "actual": 68.293994,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=5000 direct_baseline range",
+      "printed": "6.753",
+      "actual": 6.753,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=10000 direct_baseline mean",
+      "printed": "247.9",
+      "actual": 247.94524,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=10000 direct_baseline range",
+      "printed": "9.806",
+      "actual": 9.806000000000012,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=1000 unified_u11 mean",
+      "printed": "0.0242",
+      "actual": 0.024242,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=1000 unified_u11 range",
+      "printed": "0.0070",
+      "actual": 0.007000000000000603,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=2000 unified_u11 mean",
+      "printed": "0.0664",
+      "actual": 0.066358,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=2000 unified_u11 range",
+      "printed": "0.0130",
+      "actual": 0.013000000000000095,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=5000 unified_u11 mean",
+      "printed": "0.3257",
+      "actual": 0.325684,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=5000 unified_u11 range",
+      "printed": "0.0660",
+      "actual": 0.06599999999999501,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=10000 unified_u11 mean",
+      "printed": "1.121",
+      "actual": 1.121436,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.2 n=10000 unified_u11 range",
+      "printed": "0.1960",
+      "actual": 0.19600000000002993,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=1000 direct_baseline mean",
+      "printed": "4.076",
+      "actual": 4.075728,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=1000 direct_baseline range",
+      "printed": "0.8620",
+      "actual": 0.8619999999999997,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=2000 direct_baseline mean",
+      "printed": "12.03",
+      "actual": 12.029576,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=2000 direct_baseline range",
+      "printed": "1.961",
+      "actual": 1.9609999999999985,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=5000 direct_baseline mean",
+      "printed": "71.63",
+      "actual": 71.627712,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=5000 direct_baseline range",
+      "printed": "6.931",
+      "actual": 6.930999999999997,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=10000 direct_baseline mean",
+      "printed": "265.7",
+      "actual": 265.663842,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=10000 direct_baseline range",
+      "printed": "8.037",
+      "actual": 8.036999999999978,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=1000 unified_u11 mean",
+      "printed": "0.0256",
+      "actual": 0.025646,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=1000 unified_u11 range",
+      "printed": "0.0050",
+      "actual": 0.005000000000000001,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=2000 unified_u11 mean",
+      "printed": "0.0739",
+      "actual": 0.073932,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=2000 unified_u11 range",
+      "printed": "0.0090",
+      "actual": 0.008999999999998592,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=5000 unified_u11 mean",
+      "printed": "0.3820",
+      "actual": 0.381968,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=5000 unified_u11 range",
+      "printed": "0.0810",
+      "actual": 0.08099999999999302,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=10000 unified_u11 mean",
+      "printed": "1.348",
+      "actual": 1.34793,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.5 n=10000 unified_u11 range",
+      "printed": "0.3030",
+      "actual": 0.30300000000000993,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=1000 direct_baseline mean",
+      "printed": "4.061",
+      "actual": 4.06077,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=1000 direct_baseline range",
+      "printed": "0.8730",
+      "actual": 0.8729999999999998,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=2000 direct_baseline mean",
+      "printed": "11.95",
+      "actual": 11.953422,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=2000 direct_baseline range",
+      "printed": "1.456",
+      "actual": 1.4560000000000013,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=5000 direct_baseline mean",
+      "printed": "70.81",
+      "actual": 70.812242,
+      "tolerance": 0.005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=5000 direct_baseline range",
+      "printed": "6.489",
+      "actual": 6.489000000000004,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=10000 direct_baseline mean",
+      "printed": "260.7",
+      "actual": 260.672816,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=10000 direct_baseline range",
+      "printed": "7.501",
+      "actual": 7.500999999999976,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=1000 unified_u11 mean",
+      "printed": "0.0240",
+      "actual": 0.02396,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=1000 unified_u11 range",
+      "printed": "0.0160",
+      "actual": 0.0160000000000009,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=2000 unified_u11 mean",
+      "printed": "0.0662",
+      "actual": 0.066226,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=2000 unified_u11 range",
+      "printed": "0.0300",
+      "actual": 0.030000000000001206,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=5000 unified_u11 mean",
+      "printed": "0.3246",
+      "actual": 0.324626,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=5000 unified_u11 range",
+      "printed": "0.1210",
+      "actual": 0.120999999999995,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=10000 unified_u11 mean",
+      "printed": "1.118",
+      "actual": 1.117874,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S2 case=4 tau=0.8 n=10000 unified_u11 range",
+      "printed": "0.2240",
+      "actual": 0.22399999999995002,
+      "tolerance": 5e-05,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=1 seq_mean",
+      "printed": "0.311",
+      "actual": 0.3114631666666667,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=1 screen_mean",
+      "printed": "0.177",
+      "actual": 0.17667866666666668,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=1 change_percent",
+      "printed": "-43.3",
+      "actual": -43.27461941727727,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=2 seq_mean",
+      "printed": "0.387",
+      "actual": 0.38732133333333335,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=2 screen_mean",
+      "printed": "0.201",
+      "actual": 0.20060783333333332,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=2 change_percent",
+      "printed": "-48.2",
+      "actual": -48.206355790712976,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=3 seq_mean",
+      "printed": "1.078",
+      "actual": 1.0784313333333333,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=3 screen_mean",
+      "printed": "0.302",
+      "actual": 0.3016046666666667,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=3 change_percent",
+      "printed": "-72.0",
+      "actual": -72.03302080120075,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=4 seq_mean",
+      "printed": "1.346",
+      "actual": 1.34604,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=4 screen_mean",
+      "printed": "0.408",
+      "actual": 0.4083235,
+      "tolerance": 0.0005,
+      "consistent": true
+    },
+    {
+      "label": "supp S3 case=4 change_percent",
+      "printed": "-69.7",
+      "actual": -69.6648316543342,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.2 n=1000",
+      "printed": "5.40\\times 10^{-16}",
+      "actual": 5.39712122234753e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.2 n=2000",
+      "printed": "4.39\\times 10^{-16}",
+      "actual": 4.3869899500743e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.2 n=5000",
+      "printed": "4.32\\times 10^{-16}",
+      "actual": 4.31695971559444e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.2 n=10000",
+      "printed": "4.48\\times 10^{-16}",
+      "actual": 4.47782933967016e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.2 n=1000",
+      "printed": "2.71\\times 10^{-15}",
+      "actual": 2.70708909668872e-15,
+      "tolerance": 5e-18,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.2 n=2000",
+      "printed": "3.47\\times 10^{-14}",
+      "actual": 3.47461823240153e-14,
+      "tolerance": 5e-17,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.2 n=5000",
+      "printed": "1.89\\times 10^{-15}",
+      "actual": 1.89015378953476e-15,
+      "tolerance": 5e-18,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.2 n=10000",
+      "printed": "7.15\\times 10^{-16}",
+      "actual": 7.14829027362175e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.2 n=1000",
+      "printed": "5.44\\times 10^{-14}",
+      "actual": 5.43962318667951e-14,
+      "tolerance": 5e-17,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.2 n=2000",
+      "printed": "4.52\\times 10^{-14}",
+      "actual": 4.51722889347991e-14,
+      "tolerance": 5e-17,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.2 n=5000",
+      "printed": "3.23\\times 10^{-13}",
+      "actual": 3.2345712762361e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.2 n=10000",
+      "printed": "1.50\\times 10^{-13}",
+      "actual": 1.50495143025132e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.2 n=1000",
+      "printed": "2.00\\times 10^{-12}",
+      "actual": 2.00114033340003e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.2 n=2000",
+      "printed": "1.15\\times 10^{-13}",
+      "actual": 1.14952603477624e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.2 n=5000",
+      "printed": "2.31\\times 10^{-13}",
+      "actual": 2.31477128444774e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.2 n=10000",
+      "printed": "1.46\\times 10^{-13}",
+      "actual": 1.46054861448662e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.5 n=1000",
+      "printed": "3.16\\times 10^{-16}",
+      "actual": 3.16425643803266e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.5 n=2000",
+      "printed": "4.13\\times 10^{-16}",
+      "actual": 4.12916597715168e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.5 n=5000",
+      "printed": "3.49\\times 10^{-16}",
+      "actual": 3.49225069317783e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.5 n=10000",
+      "printed": "3.92\\times 10^{-16}",
+      "actual": 3.91752578648847e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.5 n=1000",
+      "printed": "4.66\\times 10^{-16}",
+      "actual": 4.66123250339279e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.5 n=2000",
+      "printed": "3.55\\times 10^{-16}",
+      "actual": 3.55205064359336e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.5 n=5000",
+      "printed": "3.80\\times 10^{-16}",
+      "actual": 3.80128396157605e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.5 n=10000",
+      "printed": "3.98\\times 10^{-16}",
+      "actual": 3.97828613848442e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.5 n=1000",
+      "printed": "4.45\\times 10^{-13}",
+      "actual": 4.4517060521514e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.5 n=2000",
+      "printed": "2.64\\times 10^{-12}",
+      "actual": 2.64058998007645e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.5 n=5000",
+      "printed": "1.58\\times 10^{-12}",
+      "actual": 1.57817920021669e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.5 n=10000",
+      "printed": "2.86\\times 10^{-13}",
+      "actual": 2.85730351035208e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.5 n=1000",
+      "printed": "2.59\\times 10^{-13}",
+      "actual": 2.58749211643396e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.5 n=2000",
+      "printed": "4.31\\times 10^{-13}",
+      "actual": 4.31220080708917e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.5 n=5000",
+      "printed": "7.53\\times 10^{-13}",
+      "actual": 7.52798551307728e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.5 n=10000",
+      "printed": "1.12\\times 10^{-13}",
+      "actual": 1.12469056970249e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.8 n=1000",
+      "printed": "3.52\\times 10^{-16}",
+      "actual": 3.51861929647798e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.8 n=2000",
+      "printed": "4.13\\times 10^{-16}",
+      "actual": 4.13481618630894e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.8 n=5000",
+      "printed": "3.79\\times 10^{-16}",
+      "actual": 3.79164513044545e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=1 tau=0.8 n=10000",
+      "printed": "4.43\\times 10^{-16}",
+      "actual": 4.42813000565298e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.8 n=1000",
+      "printed": "4.03\\times 10^{-16}",
+      "actual": 4.03050142785016e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.8 n=2000",
+      "printed": "3.60\\times 10^{-16}",
+      "actual": 3.60308904527576e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.8 n=5000",
+      "printed": "4.41\\times 10^{-16}",
+      "actual": 4.41190401894238e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=2 tau=0.8 n=10000",
+      "printed": "4.31\\times 10^{-16}",
+      "actual": 4.31012196887525e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.8 n=1000",
+      "printed": "1.83\\times 10^{-11}",
+      "actual": 1.83215123667885e-11,
+      "tolerance": 5e-14,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.8 n=2000",
+      "printed": "2.31\\times 10^{-13}",
+      "actual": 2.30515853115256e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.8 n=5000",
+      "printed": "2.64\\times 10^{-12}",
+      "actual": 2.6395811993169e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=3 tau=0.8 n=10000",
+      "printed": "3.02\\times 10^{-12}",
+      "actual": 3.02108233169987e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.8 n=1000",
+      "printed": "5.81\\times 10^{-12}",
+      "actual": 5.80852553382001e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.8 n=2000",
+      "printed": "2.14\\times 10^{-12}",
+      "actual": 2.14004310706785e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.8 n=5000",
+      "printed": "7.13\\times 10^{-13}",
+      "actual": 7.12693333011008e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    },
+    {
+      "label": "supp discrepancy case=4 tau=0.8 n=10000",
+      "printed": "4.28\\times 10^{-12}",
+      "actual": 4.28072191891852e-12,
+      "tolerance": 5e-15,
+      "consistent": true
+    },
+    {
+      "label": "RuntimeSpeedupMin",
+      "printed": "49",
+      "actual": 49.34975867721288,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "RuntimeSpeedupMax",
+      "printed": "243",
+      "actual": 242.94755854329742,
+      "tolerance": 0.5,
+      "consistent": true
+    },
+    {
+      "label": "RuntimeReductionMin",
+      "printed": "98.0",
+      "actual": 97.97364763920974,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "RuntimeReductionMax",
+      "printed": "99.6",
+      "actual": 99.58838853701764,
+      "tolerance": 0.05,
+      "consistent": true
+    },
+    {
+      "label": "main DiscrepancyOverallMax",
+      "printed": "1.83\\times 10^{-11}",
+      "actual": 1.83215123667885e-11,
+      "tolerance": 5e-14,
+      "consistent": true
+    },
+    {
+      "label": "main DiscrepancyOverallMin",
+      "printed": "3.16\\times 10^{-16}",
+      "actual": 3.16425643803266e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp DiscrepancyOverallMax",
+      "printed": "1.83\\times 10^{-11}",
+      "actual": 1.83215123667885e-11,
+      "tolerance": 5e-14,
+      "consistent": true
+    },
+    {
+      "label": "supp DiscrepancyOverallMin",
+      "printed": "3.16\\times 10^{-16}",
+      "actual": 3.16425643803266e-16,
+      "tolerance": 5e-19,
+      "consistent": true
+    },
+    {
+      "label": "supp AblationScreenDiscrepancyMedian",
+      "printed": "4.00\\times 10^{-14}",
+      "actual": 3.99592356294072e-14,
+      "tolerance": 5e-17,
+      "consistent": true
+    },
+    {
+      "label": "supp AblationSeqDiscrepancyMedian",
+      "printed": "3.27\\times 10^{-13}",
+      "actual": 3.273675333463065e-13,
+      "tolerance": 5e-16,
+      "consistent": true
+    }
+  ],
+  "derived": {
+    "speedup_min": 49.34975867721288,
+    "speedup_max": 242.94755854329742,
+    "reduction_min": 97.97364763920974,
+    "reduction_max": 99.58838853701764,
+    "DiscrepancyOverallMax": 1.83215123667885e-11,
+    "DiscrepancyOverallMin": 3.16425643803266e-16,
+    "AblationScreenDiscrepancyMedian": 3.99592356294072e-14,
+    "AblationSeqDiscrepancyMedian": 3.273675333463065e-13
+  },
+  "ablation": [
+    {
+      "case": 1,
+      "lean_seq": 0.3114631666666667,
+      "unified_u11": 0.17667866666666668,
+      "change_percent": -43.27461941727727
+    },
+    {
+      "case": 2,
+      "lean_seq": 0.38732133333333335,
+      "unified_u11": 0.20060783333333332,
+      "change_percent": -48.206355790712976
+    },
+    {
+      "case": 3,
+      "lean_seq": 1.0784313333333333,
+      "unified_u11": 0.3016046666666667,
+      "change_percent": -72.03302080120075
+    },
+    {
+      "case": 4,
+      "lean_seq": 1.34604,
+      "unified_u11": 0.4083235,
+      "change_percent": -69.6648316543342
+    }
+  ],
+  "screen_not_faster_than_seq_configurations": [
+    {
+      "case": 1,
+      "tau": 0.2,
+      "n": 1000,
+      "seq_mean": 0.007494,
+      "screen_mean": 0.00753800000000001,
+      "change_percent": 0.5871363757674164
+    }
+  ],
+  "nonzero_full_active_recoveries": [
+    {
+      "paper_case": "2",
+      "tau": "0.2",
+      "n": "1000",
+      "internal_recovery_total": "2",
+      "repaired_points_total": "5073",
+      "repair_total": "5918"
+    },
+    {
+      "paper_case": "2",
+      "tau": "0.8",
+      "n": "1000",
+      "internal_recovery_total": "1",
+      "repaired_points_total": "4890",
+      "repair_total": "5588"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.2",
+      "n": "1000",
+      "internal_recovery_total": "5894",
+      "repaired_points_total": "115752",
+      "repair_total": "214332"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.2",
+      "n": "2000",
+      "internal_recovery_total": "103",
+      "repaired_points_total": "107862",
+      "repair_total": "152470"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.5",
+      "n": "1000",
+      "internal_recovery_total": "2209",
+      "repaired_points_total": "123329",
+      "repair_total": "209658"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.5",
+      "n": "2000",
+      "internal_recovery_total": "16",
+      "repaired_points_total": "101781",
+      "repair_total": "132232"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.8",
+      "n": "1000",
+      "internal_recovery_total": "5740",
+      "repaired_points_total": "116156",
+      "repair_total": "214546"
+    },
+    {
+      "paper_case": "3",
+      "tau": "0.8",
+      "n": "2000",
+      "internal_recovery_total": "95",
+      "repaired_points_total": "108281",
+      "repair_total": "152416"
+    }
+  ],
+  "total_full_active_recoveries": 14060,
+  "total_seq_fallbacks": 0,
+  "initial_threshold_expansions": 0
+}

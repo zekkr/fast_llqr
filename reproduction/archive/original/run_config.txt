@@ -1,0 +1,5 @@
+run_tag=u11_rep500_seed2025_61dc4d6_20260911
+num_rep=500
+seed_base=2025
+cache_flags=27
+provider_flags=1
