@@ -131,21 +131,10 @@ llqr_local_fit <- function(x, y, tau = 0.5, z = NULL, h = NULL,
 
   ll_est <- numeric(length(z))
   d_ll_est <- numeric(length(z))
-  A <- cbind(1, x)
   for (i in seq_along(z)) {
     eva_z <- z[i] - x
     w <- llqr_kernel_weights(eva_z / h, case = case)
-    active <- w > 0
-    if (sum(active) < 2L || qr(A[active, , drop = FALSE])$rank < 2L) {
-      stop("Singular design matrix in direct LLQR local fit.")
-    }
-    fit <- quantreg::rq.wfit(
-      x = A[active, , drop = FALSE],
-      y = y[active],
-      weights = w[active],
-      tau = tau,
-      method = method
-    )
+    fit <- quantreg::rq(y ~ x, tau = tau, weights = w, method = method)
     ll_est[i] <- fit$coef[1] + z[i] * fit$coef[2]
     d_ll_est[i] <- fit$coef[2]
   }
