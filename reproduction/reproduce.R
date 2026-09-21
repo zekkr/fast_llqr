@@ -13,6 +13,7 @@ if(mode=="archived") {
 reps<-as.integer(option("reps",if(mode=="full")"500" else "2"));seed<-as.integer(option("seed-base","2025"))
 if(mode=="full")stopifnot(reps==500L,seed==2025L)
 if(mode=="smoke")stopifnot(reps>0L,reps<=10L)
+baseline<-option("llqr-baseline","formula");stopifnot(baseline%in%c("formula","historical"))
 profile<-option("profile","portable")
 grid<-if(mode=="full")expand.grid(paper_case=1:4,tau=c(.2,.5,.8),n=c(1000L,2000L,5000L,10000L)) else data.frame(paper_case=1:4,tau=.5,n=100L)
 index<-option("config");if(!is.null(index)){index<-as.integer(index);stopifnot(index>=1L,index<=nrow(grid));grid<-grid[index,,drop=FALSE]}
@@ -21,13 +22,14 @@ Sys.setenv(OMP_NUM_THREADS=1,OPENBLAS_NUM_THREADS=1,MKL_NUM_THREADS=1,BLIS_NUM_T
 # All worker subprocesses inherit the fixed single-thread settings.
 work<-file.path(out,"workspace");dir.create(work)
 file.copy("reproduction/frozen/R",work,recursive=TRUE)
+if(baseline=="formula")stopifnot(file.copy("R/llqr_functions.R",file.path(work,"R","llqr_functions.R"),overwrite=TRUE))
 expdir<-file.path(work,"experiment");dir.create(expdir)
 files<-list.files("reproduction/frozen",full.names=TRUE,no..=TRUE,all.files=TRUE)
 file.copy(files,expdir,recursive=TRUE)
 source("reproduction/build.R");build_u11(file.path(expdir,"build"),profile,root)
 cpu<-if(file.exists("/proc/cpuinfo"))grep("^model name",readLines("/proc/cpuinfo"),value=TRUE)[1L] else if(Sys.info()[["sysname"]]=="Darwin")system2("sysctl",c("-n","machdep.cpu.brand_string"),stdout=TRUE) else Sys.info()[["machine"]]
 os_release<-if(file.exists("/etc/os-release"))readLines("/etc/os-release") else character()
-meta<-list(cpu=cpu,os_release=os_release,external_libraries=extSoftVersion(),session=capture.output(sessionInfo()),system=Sys.info(),profile=profile,
+meta<-list(llqr_baseline=baseline,cpu=cpu,os_release=os_release,external_libraries=extSoftVersion(),session=capture.output(sessionInfo()),system=Sys.info(),profile=profile,
   packages=lapply(c("quantreg","KernSmooth"),function(p)list(package=p,version=as.character(packageVersion(p)))),
   source_sha=system2("git","rev-parse HEAD",stdout=TRUE),threads=Sys.getenv(c("OMP_NUM_THREADS","OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","BLIS_NUM_THREADS","VECLIB_MAXIMUM_THREADS")))
 saveRDS(meta,file.path(out,"environment.rds"));writeLines(capture.output(str(meta)),file.path(out,"environment.txt"))

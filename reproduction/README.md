@@ -129,3 +129,40 @@ four-case full rerun is implemented. For MST, only archived summary reconstructi
 is included; its historical source dependencies have not been made into an
 independently executable rerun. Do not describe this release as rerunning every
 experiment in the supplement.
+
+## Full-weight formula LLQR baseline (2026-09-21)
+
+Fresh `smoke` and `full` runs now default to the formula interface
+`quantreg::rq(y ~ x, weights=w, tau=tau, method="br")`, retaining zero-weight rows.
+Use `--llqr-baseline historical` explicitly to replay the earlier filtered
+`rq.wfit` baseline. The `archived` mode still reconstructs the immutable original
+archive; it must not be described as the new LLQR rerun.
+
+The new paired HPC run and its SHA-gated submission commands are documented in
+`experiments/llqr_rq_rep500/README.md`. Its results have paper case IDs 1 (logistic,
+interior grid) and 2 (normal errors, full sorted grid), both using kernel case 2.
+TVCQR and MST sources remain unchanged. Each run has distinct outputs and actual
+worker environment records. For the updated manuscript, the bundle's
+`output/llqr_rq_revision/source_manifest.json` selects the new LLQR and retained
+TVCQR archives; `verify_manuscript.py --bundle BUNDLE` follows that manifest.
+
+Rebuild the **updated** paper's LLQR summaries from the included fixed compressed
+archive, then combine them with the retained TVCQR summaries:
+
+```sh
+python3 reproduction/rebuild_current_llqr.py output/current-paper-rebuilt
+```
+
+This creates a new directory, reconstructs statistics from all 12,000 paired
+replication records, verifies 36,000 fits and compact H/recovery records, and
+writes `current_paper_method_summary.csv` (144 rows). It does not rerun fitting.
+For a small fresh run use:
+
+```sh
+Rscript reproduction/reproduce.R --mode smoke --reps 2 --llqr-baseline formula --output output/current-paper-smoke
+```
+
+For a full three-method **LLQR-only** rerun on the matching HPC environment use
+`experiments/llqr_rq_rep500/submit.py` as documented there. This runs exactly the
+24 LLQR configurations; the general `reproduce.R --mode full` includes all four
+cases and is not the command used for this LLQR-only update.

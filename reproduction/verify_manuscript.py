@@ -12,9 +12,13 @@ import argparse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--report', type=Path, help='Optionally save the full JSON result at this path.')
+parser.add_argument('--llqr-run',type=Path,help='Accepted new LLQR paired run; omit to verify historical manuscript.')
 parser.add_argument('--bundle', type=Path, required=True)
 args = parser.parse_args()
 BUNDLE = args.bundle
+manifest=BUNDLE/'output/llqr_rq_revision/source_manifest.json'
+if args.llqr_run is None and manifest.exists():
+    args.llqr_run=BUNDLE/json.loads(manifest.read_text())['llqr']
 def read_csv(p):
     with (BUNDLE / p).open() as f:
         return list(csv.DictReader(f))
@@ -24,9 +28,24 @@ new = read_csv('results/hpc/llqr_case2_logistic_runs/llqr_c2_logistic_rep500_see
 # The old LLQR Case 1 is excluded. New logistic LLQR raw Case 2 maps to paper Case 1.
 source = [dict(r) for r in old if int(r['paper_case']) in (2, 3, 4)]
 source.extend(dict(r, paper_case='1') for r in new)
+if args.llqr_run:
+    assert (args.llqr_run/'RESULTS_PASS').exists()
+    with (args.llqr_run/'tables/config_method_summary.csv').open() as f:
+        source=[dict(r) for r in old if int(r['paper_case']) in (3,4)]+[dict(r,paper_case=r['case']) for r in csv.DictReader(f)]
 index = {(int(r['paper_case']), float(r['tau']), int(r['n']), r['method']): r for r in source}
 main = (BUNDLE / 'paper/main_submission_new_v2_TW.tex').read_text()
 supp = (BUNDLE / 'paper/supplement_submission_new_v2_TW.tex').read_text()
+def strip_blue(text):
+    needle=r'\finalRev{'
+    while needle in text:
+        i=text.index(needle);j=i+len(needle);depth=1;k=j
+        while depth:
+            if text[k]=='{':depth+=1
+            elif text[k]=='}':depth-=1
+            k+=1
+        text=text[:i]+text[j:k-1]+text[k:]
+    return text
+main=strip_blue(main);supp=strip_blue(supp)
 checks = []
 issues = []
 
@@ -67,6 +86,9 @@ new_screen = read_csv('output/llqr_case2_logistic_rep500/reproduced/screening_re
 old_screen = read_csv('paper/data/u11_rep500/rep500_seed2025_screening_tau05.csv')
 screen = {(1, int(r['n'])): r for r in new_screen if float(r['tau']) == .5}
 names = dict(gamma='gamma_mean', first_mean='first_pass_prop_mean', first_min='first_pass_prop_min', first_max='first_pass_prop_max', F_mean='Fr_mean', F_median='Fr_median', F_q90='Fr_q90', F_max='Fr_max', R_mean='total_repair_mean', R_min='total_repair_min', R_max='total_repair_max', all_grid_no_repair='uniform', mean_max_S='mean_max_Sj', over_nb='max_Sj_over_nb', over_nb_gamma_log='max_Sj_over_nb_gamma_logn')
+if args.llqr_run:
+    with (args.llqr_run/'tables/screening_all_taus.csv').open() as f:
+        screen={(1,int(r['n'])):{k:r[v] for k,v in names.items()} for r in csv.DictReader(f) if r['case']=='1' and float(r['tau'])==.5}
 for r in old_screen:
     if r['paper_case'] == '3':
         screen[3, int(r['n'])] = {k: r[v] for k, v in names.items()}
@@ -129,7 +151,7 @@ for text_name, text in (('main',main), ('supp',supp)):
             derived[macro] = actual
 
 # Check mapped values against source, never use mapped values as primary evidence.
-mapped = read_csv('output/llqr_case1_paper_revision/mapped_method_summary.csv')
+mapped = read_csv('output/'+('llqr_rq_revision' if args.llqr_run else 'llqr_case1_paper_revision')+'/mapped_method_summary.csv')
 map_issues = []
 for r in mapped:
     s = index[int(r['paper_case']), float(r['tau']), int(r['n']), r['method']]

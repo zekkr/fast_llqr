@@ -43,3 +43,15 @@ tolerance or package version. The U11 tolerance is independently fixed at 1e-14.
 Local R 4.3.3 / quantreg 5.97 / KernSmooth 2.23.24 / Homebrew GCC 15.1 on macOS.
 The generated run environment and compiler command records are retained with the
 smoke output. They are new validation metadata, not historical substitutions.
+
+## New full-weight LLQR rerun (2026-09-21)
+
+This run is distinct from the September 11/14 historical archives. Every worker
+asserts R 4.3.1, quantreg 5.94, Xeon Gold 6258R and single-thread numerical
+libraries. Its `_run_meta/workers` records session/system/CPU/RNG settings and
+the baseline body/file fingerprint. `_run_meta/environment_versions.txt` records
+quantreg 5.94, KernSmooth 2.23.21, BR default method and tolerance; the BR source
+sets `.Machine$double.eps^(2/3)`, approximately 3.666853e-11. U11 keeps 1e-14.
+The actual BLAS/LAPACK paths are R's bundled libRblas.so and libRlapack.so
+(LAPACK 3.11.0). Compiler configuration is archived separately under `_run_meta/build`.
+These new-run records do not establish per-worker historical TVCQR versions.
