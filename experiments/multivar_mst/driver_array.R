@@ -11,12 +11,14 @@ case_id <- env_int("MST_CASE")
 n <- env_int("MST_N")
 num_rep <- env_int("MST_NUM_REP", 100L)
 seed_base <- env_int("MST_SEED_BASE", 2025L)
+threshold_factor <- as.numeric(Sys.getenv("MST_THRESHOLD_FACTOR", "0.1"))
 task_id <- env_int("SLURM_ARRAY_TASK_ID", 1L)
 chunk <- env_int("MST_CHUNK_SIZE", 1L)
 run_tag <- Sys.getenv("MST_RUN_TAG", "")
 output_root <- Sys.getenv("MST_OUTPUT_ROOT", "results/hpc/multivar_mst_runs")
 allow_smoke <- identical(Sys.getenv("MST_ALLOW_SMOKE", "0"), "1")
 stopifnot(case_id %in% 1:2, n > 4L, nzchar(run_tag), chunk > 0L,
+          is.finite(threshold_factor), threshold_factor > 0,
           allow_smoke || n %in% c(500L, 1000L, 2000L),
           allow_smoke || num_rep == 100L, allow_smoke || seed_base == 2025L)
 
@@ -67,7 +69,8 @@ timed_fit <- function(method, dat) {
   started <- proc.time()[["elapsed"]]
   value <- tryCatch(
     if (method == "direct_fit") llqr_direct_multivar(dat$x, dat$y, 0.5, dat$z) else
-      llqr_seq_screen_mst(dat$x, dat$y, 0.5, dat$z, kernel = kernel, diagnostics = TRUE),
+      llqr_seq_screen_mst(dat$x, dat$y, 0.5, dat$z, threshold_factor = threshold_factor,
+                          kernel = kernel, diagnostics = TRUE),
     error = identity)
   list(value = value, elapsed = proc.time()[["elapsed"]] - started)
 }
@@ -95,6 +98,8 @@ run_replication <- function(rep_id) {
         max_abs_fit_difference = NA_real_, repair_total = NA_integer_, repaired_points = NA_integer_,
         full_active_recovery_total = NA_integer_, independent_init_total = NA_integer_,
         threshold_expansion_total = NA_integer_, underflow_total = NA_integer_,
+        retained_size_mean = NA_real_, retained_size_median = NA_real_,
+        retained_size_max = NA_real_, retained_fraction_mean = NA_real_,
         underflow_max = NA_integer_, mst_seconds = NA_real_, max_edge = NA_real_,
         direct_error = if (direct_error) conditionMessage(fit$direct_fit$value) else "",
         screen_error = if (screen_error) conditionMessage(fit$seq_screen_mst$value) else ""))
@@ -116,6 +121,10 @@ run_replication <- function(rep_id) {
         full_active_recovery_total = sum(screen$diagnostics[, "full_recovery"]),
         independent_init_total = sum(screen$diagnostics[, "independent"]),
         threshold_expansion_total = sum(screen$diagnostics[, "threshold_expansion_steps"], na.rm = TRUE),
+        retained_size_mean = mean(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+        retained_size_median = stats::median(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+        retained_size_max = max(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+        retained_fraction_mean = mean(screen$diagnostics[, "first_retained_size"], na.rm = TRUE) / n,
         underflow_total = sum(screen$solver_info$underflow_count),
         underflow_max = max(screen$solver_info$underflow_count),
         mst_seconds = screen$solver_info$mst_seconds, max_edge = max(screen$edge_weight),
@@ -145,6 +154,10 @@ run_replication <- function(rep_id) {
       full_active_recovery_total = sum(screen$diagnostics[, "full_recovery"]),
       independent_init_total = sum(screen$diagnostics[, "independent"]),
       threshold_expansion_total = sum(screen$diagnostics[, "threshold_expansion_steps"], na.rm = TRUE),
+      retained_size_mean = mean(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+      retained_size_median = stats::median(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+      retained_size_max = max(screen$diagnostics[, "first_retained_size"], na.rm = TRUE),
+      retained_fraction_mean = mean(screen$diagnostics[, "first_retained_size"], na.rm = TRUE) / n,
       underflow_total = sum(screen$solver_info$underflow_count),
       underflow_max = max(screen$solver_info$underflow_count),
       mst_seconds = screen$solver_info$mst_seconds, max_edge = max(screen$edge_weight),

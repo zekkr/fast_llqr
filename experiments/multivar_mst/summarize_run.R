@@ -21,6 +21,8 @@ rows <- lapply(seq_len(nrow(configs)), function(i) {
     h_mismatch_count = sum(!d$h_set_match), audit_failure_count = sum(!d$audit_ok),
     fallback_count = 0L, recovery_total = sum(d$full_active_recovery_total),
     repair_total = sum(d$repair_total), repaired_points_total = sum(d$repaired_points),
+    retained_size_mean = mean(d$retained_size_mean),
+    retained_fraction_mean = mean(d$retained_fraction_mean),
     threshold_expansion_total = sum(d$threshold_expansion_total),
     underflow_total = sum(d$underflow_total), underflow_max = max(d$underflow_max),
     mst_time_mean = mean(d$mst_seconds), max_edge_mean = mean(d$max_edge),

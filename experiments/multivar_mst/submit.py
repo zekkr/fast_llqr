@@ -3,26 +3,37 @@
 import argparse,json,os,pathlib,shlex,subprocess
 
 p=argparse.ArgumentParser()
-p.add_argument('stage',choices=['preflight','formal'])
+p.add_argument('stage',choices=['preflight','pilot','formal'])
 p.add_argument('--tag',required=True);p.add_argument('--sha',required=True)
-p.add_argument('--preflight');a=p.parse_args()
+p.add_argument('--preflight');p.add_argument('--pilot');a=p.parse_args()
 root=pathlib.Path.cwd();exp='experiments/multivar_mst'
 output=root/'results/hpc/multivar_mst_runs';run=output/a.tag
 assert all(c.isalnum() or c in '-_.' for c in a.tag)
 assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==a.sha
 subprocess.check_call(['git','diff','--quiet','HEAD','--',exp])
-if a.stage=='formal':
+if a.stage in ('pilot','formal'):
     assert a.preflight
     marker=output/a.preflight/'PREFLIGHT_PASS'
     assert marker.read_text().strip()==a.sha
     assert (root/exp/'build/build_git_sha.txt').read_text().strip()==a.sha
+selected_threshold=.1
+if a.stage=='formal':
+    assert a.pilot
+    pilot_dir=output/a.pilot
+    assert (pilot_dir/'PILOT_PASS').read_text().strip()==a.sha
+    selected_threshold=float((pilot_dir/'tables/selected_threshold.txt').read_text().strip())
 run.mkdir(parents=True,exist_ok=False);(run/'logs').mkdir();meta=run/'_run_meta';meta.mkdir()
-num_rep=3 if a.stage=='preflight' else 100
+num_rep={'preflight':3,'pilot':5,'formal':100}[a.stage]
+seed_base=9025 if a.stage=='pilot' else 2025
 config=dict(stage=a.stage,git_sha=a.sha,cases=[1,2],ns=[500,1000,2000],tau=.5,
-            dimension=4,num_rep=num_rep,seed_base=2025,
+            dimension=4,num_rep=num_rep,seed_base=seed_base,
             methods=['direct_fit','seq_screen_mst'],include_H_seq=False,
-            direct_backend='quantreg::rq(method="br")',threshold_factor=.1,
-            preflight=a.preflight)
+            direct_backend='quantreg::rq(method="br")',
+            threshold_factor=[.1,.2,.5,1.0] if a.stage=='pilot' else selected_threshold,
+            pilot_selection_rule=('all audits pass; minimize equal-weight mean of six '
+              'configuration mean screen/direct ratios; within 2 percent of minimum, '
+              'minimize recovery, repair, retained fraction, then threshold') if a.stage=='pilot' else None,
+            preflight=a.preflight,pilot=a.pilot)
 (meta/'run_config.json').write_text(json.dumps(config,indent=2)+'\n')
 print(json.dumps(config),flush=True)
 
@@ -36,7 +47,8 @@ export R_LIBS_USER=/home/wuweic/R/x86_64-pc-linux-gnu-library/4.3
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
 '''
 env=dict(MST_PROJECT_ROOT=str(root),MST_OUTPUT_ROOT=str(output),MST_RUN_TAG=a.tag,
-         MST_NUM_REP=str(num_rep),MST_SEED_BASE='2025',MST_PUSHED_SHA=a.sha,
+         MST_NUM_REP=str(num_rep),MST_SEED_BASE=str(seed_base),MST_PUSHED_SHA=a.sha,
+         MST_THRESHOLD_FACTOR=str(selected_threshold),
          MST_REQUIRE_HPC='1',MST_ALLOW_SMOKE='1' if a.stage=='preflight' else '0')
 base+='\n'.join('export '+k+'='+shlex.quote(v) for k,v in env.items())
 base+='\ncd '+shlex.quote(str(root))+'\n[[ $(git rev-parse HEAD) == '+a.sha+' ]]\n'
@@ -69,9 +81,13 @@ for case in [1,2]:
         name=f'mst_c{case}_n{n}'
         setup=f'export MST_CASE={case} MST_N={n} MST_CHUNK_SIZE=1\n'
         spec=f'1-{num_rep}%{min(num_rep,50)}'
-        job=submit(name,setup+f'Rscript {exp}/driver_array.R',build,array=spec)
-        merges.append(submit(name+'_merge',setup+f'Rscript {exp}/merge_config.R',[job],time='00:20:00'))
-summary_body=f'Rscript {exp}/summarize_run.R\n'
+        driver='pilot_driver.R' if a.stage=='pilot' else 'driver_array.R'
+        merger='merge_pilot_config.R' if a.stage=='pilot' else 'merge_config.R'
+        job=submit(name,setup+f'Rscript {exp}/'+driver,build,array=spec)
+        merges.append(submit(name+'_merge',setup+f'Rscript {exp}/'+merger,[job],time='00:20:00'))
+summary_script='summarize_pilot.R' if a.stage=='pilot' else 'summarize_run.R'
+summary_body=f'Rscript {exp}/'+summary_script+'\n'
 if a.stage=='preflight':summary_body+='printf "%s\\n" "$MST_PUSHED_SHA" > "$MST_OUTPUT_ROOT/$MST_RUN_TAG/PREFLIGHT_PASS"\n'
+if a.stage=='pilot':summary_body+='printf "%s\\n" "$MST_PUSHED_SHA" > "$MST_OUTPUT_ROOT/$MST_RUN_TAG/PILOT_PASS"\n'
 submit('mst_summary',summary_body,merges,time='00:20:00')
 print('RUN_DIR='+str(run),flush=True)
