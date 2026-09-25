@@ -12,17 +12,14 @@ The prepared source distribution is `fastllqr_0.2.0.tar.gz`:
 R CMD INSTALL fastllqr_0.2.0.tar.gz
 ```
 
-After the fixed GitHub release is published, install the fixed reference (not a
-moving branch):
+Install the fixed GitHub reference (not a moving branch):
 
 ```r
 install.packages("remotes")
 remotes::install_github("zekkr/fastllqr@v0.2.0")
 ```
 
-Release availability is recorded in `RELEASE_STATUS.md`. The repositories were
-private at the 2026-09-21 accessibility check; the URLs are not yet anonymous
-reader access. This directory does not claim that a tag has been publicly released.
+Release availability and validation status are recorded in `RELEASE_STATUS.md`.
 R, a Fortran compiler, and R packages `quantreg` and `KernSmooth` are needed for
 new simulation runs. `testthat` is needed only for package tests. Python 3 is
 needed for archived aggregation. No additional R package is installed silently.
@@ -125,10 +122,10 @@ Linux validation remains pending.
 ## Coverage and unresolved historical metadata
 
 See `ENVIRONMENT_AUDIT.md` for evidence versus missing metadata. The primary
-four-case full rerun is implemented. For MST, only archived summary reconstruction
-is included; its historical source dependencies have not been made into an
-independently executable rerun. Do not describe this release as rerunning every
-experiment in the supplement.
+four-case full rerun is implemented. The latest Supplementary Table S1 uses a separate, fully saved 100-replication
+run; see `archive/mst_rep100_20260925/`. Its source, checkpoints, seeds and
+per-replication statistics are included. Other historical MST summaries remain
+archives and should not be described as newly rerun experiments.
 
 ## Full-weight formula LLQR baseline (2026-09-21)
 
@@ -166,3 +163,13 @@ For a full three-method **LLQR-only** rerun on the matching HPC environment use
 `experiments/llqr_rq_rep500/submit.py` as documented there. This runs exactly the
 24 LLQR configurations; the general `reproduce.R --mode full` includes all four
 cases and is not the command used for this LLQR-only update.
+
+## Supplementary Table S1 (2026-09-25)
+
+The current six-row Table S1 was generated from 100 paired replications per
+configuration. The fixed archive, exact DGPs, source snapshots, full checkpoint
+set, validation report, and a small fresh-run command are in
+[`archive/mst_rep100_20260925/`](archive/mst_rep100_20260925/README.md). The
+runner is `scripts/run_llqr_multivar_iteration_simulation.R`; it directly loads
+`R/llqr_multivar_functions.R`. The older April 2026 MST summaries elsewhere in
+`archive/` are retained only as historical comparisons.
